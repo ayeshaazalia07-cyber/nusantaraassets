@@ -1,12 +1,27 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { auth } from "@/app/lib/firebase"; //
+import { onAuthStateChanged } from "firebase/auth"; //
 
 function DetailContent() {
   const searchParams = useSearchParams();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // Ambil data dari URL (seperti logika muatDataProduk di HTML lama)
+  // Pantau status login secara real-time dari Firebase agar sinkron dengan Navbar
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setIsLoggedIn(true);
+      } else {
+        setIsLoggedIn(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Ambil data dari URL (logika muatDataProduk)
   const nama = searchParams.get("nama") || "Aset Nusantara";
   const harga = searchParams.get("harga") || "Rp 70k";
   const desc =
@@ -90,7 +105,6 @@ function DetailContent() {
         </p>
 
         <div style={{ display: "flex", gap: "20px", justifyContent: "center" }}>
-          {/* GANTI TOMBOL LAMA DENGAN INI */}
           <button
             className="btn-cart"
             style={{
@@ -106,7 +120,7 @@ function DetailContent() {
               const keranjang = JSON.parse(
                 localStorage.getItem("nusantaraCart") || "[]",
               );
-              keranjang.push({ nama, harga }); // Data nama & harga diambil dari URL params tadi
+              keranjang.push({ nama, harga });
               localStorage.setItem("nusantaraCart", JSON.stringify(keranjang));
               alert("Berhasil masuk keranjang! 🛒");
               window.location.href = "/keranjang";
@@ -127,14 +141,13 @@ function DetailContent() {
               cursor: "pointer",
             }}
             onClick={() => {
-              // Cek login dulu sebelum beli langsung
-              const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+              // Validasi menggunakan state isLoggedIn dari Firebase Auth
               if (!isLoggedIn) {
                 alert("Ups! Kamu harus login dulu sebelum membeli.");
                 window.location.href = "/login";
                 return;
               }
-              // Langsung pindah ke pembayaran
+              // Jika login terdeteksi, lanjut ke pembayaran
               window.location.href = "/pembayaran";
             }}
           >
