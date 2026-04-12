@@ -50,6 +50,10 @@ export default function LoginPage() {
       localStorage.setItem("userName", result.user.displayName || "User");
       localStorage.setItem("userPic", result.user.photoURL || "");
 
+      localStorage.setItem("userEmail", result.user.email || "");
+
+      localStorage.setItem("userPic", result.user.photoURL || "");
+
       alert(`Login Google Berhasil! Halo, ${result.user.displayName}`);
       router.push("/"); // Gunakan router.push agar lebih smooth
     } catch (error: any) {

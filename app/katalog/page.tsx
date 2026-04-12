@@ -1,14 +1,102 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Navbar from "@/app/components/Navbar"; // 1. Panggil komponen Navbar responsifmu
+import Navbar from "../components/Navbar"; // Menyesuaikan path Navbar
+import { supabase } from "../lib/supabase";
 
 export default function Katalog() {
   const [user, setUser] = useState<{ name: string; pic: string } | null>(null);
   const [kategori, setKategori] = useState("semua");
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // --- DATA CADANGAN (Fallback jika database kosong) ---
+  const daftarAsetManual = [
+    {
+      id: 1,
+      nama: "Mega Mendung Sky Set",
+      provinsi: "JAWA BARAT",
+      kategori: "jawa-barat",
+      deskripsi:
+        "Background & tile awan Cirebon gradasi biru untuk level atmosferik.",
+      harga: "70k",
+    },
+    {
+      id: 2,
+      nama: "Angklung Rhythm Kit",
+      provinsi: "JAWA BARAT",
+      kategori: "jawa-barat",
+      deskripsi:
+        "Instrumen angklung berbagai ukuran untuk item pick-up/power-up.",
+      harga: "70k",
+    },
+    {
+      id: 3,
+      nama: "Kujang Warrior Blades",
+      provinsi: "JAWA BARAT",
+      kategori: "jawa-barat",
+      deskripsi:
+        "Koleksi senjata tradisional Kujang variasi warna emas, perak, & baja.",
+      harga: "70k",
+    },
+    {
+      id: 4,
+      nama: "Wayang Kulit Sprite Sheet",
+      provinsi: "JAWA TENGAH",
+      kategori: "jawa-tengah",
+      deskripsi:
+        "Karakter pixel Gatotkaca dengan detail sendi untuk animasi side-scroller.",
+      harga: "70k",
+    },
+    {
+      id: 5,
+      nama: "Borobudur Stone Tiles",
+      provinsi: "JAWA TENGAH",
+      kategori: "jawa-tengah",
+      deskripsi:
+        "Ground tiles & struktur stupa mini untuk petualangan reruntuhan kuno.",
+      harga: "70k",
+    },
+    {
+      id: 6,
+      nama: "Reog Ponorogo Mask",
+      provinsi: "JAWA TIMUR",
+      kategori: "jawa-timur",
+      deskripsi:
+        "Aset headgear bos musuh detail, resolusi pixel yang bold & eksotis.",
+      harga: "70k",
+    },
+    {
+      id: 7,
+      nama: "Bromo Volcanic Biome",
+      provinsi: "JAWA TIMUR",
+      kategori: "jawa-timur",
+      deskripsi:
+        "Paket lingkungan gunung berapi, pasir berbisik, & kawah berasap.",
+      harga: "70k",
+    },
+    {
+      id: 8,
+      nama: "Gapura Candi Bentar",
+      provinsi: "BALI",
+      kategori: "bali",
+      deskripsi:
+        "Struktur gerbang khas Bali untuk checkpoint atau pintu masuk area.",
+      harga: "70k",
+    },
+    {
+      id: 9,
+      nama: "Frangipani Decor",
+      provinsi: "BALI",
+      kategori: "bali",
+      deskripsi:
+        "Elemen dekoratif bunga kamboja & sesajen untuk detail lingkungan.",
+      harga: "70k",
+    },
+  ];
 
   useEffect(() => {
-    // Cek status login dari localStorage untuk kebutuhan internal halaman jika perlu
+    // Cek status login
     const loggedIn = localStorage.getItem("isLoggedIn") === "true";
     if (loggedIn) {
       setUser({
@@ -16,88 +104,42 @@ export default function Katalog() {
         pic: localStorage.getItem("userPic") || "",
       });
     }
-  }, []);
 
-  // --- DATA ASET NUSANTARA ---
-  const daftarAset = [
-    {
-      id: 1,
-      nama: "Mega Mendung Sky Set",
-      prov: "JAWA BARAT",
-      cat: "jawa-barat",
-      desc: "Background & tile awan Cirebon gradasi biru untuk level atmosferik.",
-    },
-    {
-      id: 2,
-      nama: "Angklung Rhythm Kit",
-      prov: "JAWA BARAT",
-      cat: "jawa-barat",
-      desc: "Instrumen angklung berbagai ukuran untuk item pick-up/power-up.",
-    },
-    {
-      id: 3,
-      nama: "Kujang Warrior Blades",
-      prov: "JAWA BARAT",
-      cat: "jawa-barat",
-      desc: "Koleksi senjata tradisional Kujang variasi warna emas, perak, & baja.",
-    },
-    {
-      id: 4,
-      nama: "Wayang Kulit Sprite Sheet",
-      prov: "JAWA TENGAH",
-      cat: "jawa-tengah",
-      desc: "Karakter pixel Gatotkaca dengan detail sendi untuk animasi side-scroller.",
-    },
-    {
-      id: 5,
-      nama: "Borobudur Stone Tiles",
-      prov: "JAWA TENGAH",
-      cat: "jawa-tengah",
-      desc: "Ground tiles & struktur stupa mini untuk petualangan reruntuhan kuno.",
-    },
-    {
-      id: 6,
-      nama: "Reog Ponorogo Mask",
-      prov: "JAWA TIMUR",
-      cat: "jawa-timur",
-      desc: "Aset headgear bos musuh detail, resolusi pixel yang bold & eksotis.",
-    },
-    {
-      id: 7,
-      nama: "Bromo Volcanic Biome",
-      prov: "JAWA TIMUR",
-      cat: "jawa-timur",
-      desc: "Paket lingkungan gunung berapi, pasir berbisik, & kawah berasap.",
-    },
-    {
-      id: 8,
-      nama: "Gapura Candi Bentar",
-      prov: "BALI",
-      cat: "bali",
-      desc: "Struktur gerbang khas Bali untuk checkpoint atau pintu masuk area.",
-    },
-    {
-      id: 9,
-      nama: "Frangipani Decor",
-      prov: "BALI",
-      cat: "bali",
-      desc: "Elemen dekoratif bunga kamboja & sesajen untuk detail lingkungan.",
-    },
-  ];
+    // AMBIL DATA DARI SUPABASE (Table: product)
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase.from("product").select("*");
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          setProducts(data);
+        } else {
+          setProducts(daftarAsetManual);
+        }
+      } catch (err) {
+        console.error("Gagal ambil data:", err);
+        setProducts(daftarAsetManual);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+  }, []);
 
   const asetFiltered =
     kategori === "semua"
-      ? daftarAset
-      : daftarAset.filter((item) => item.cat === kategori);
+      ? products
+      : products.filter((item) => (item.kategori || item.cat) === kategori);
 
   return (
     <main
       style={{ backgroundColor: "#0f172a", minHeight: "100vh", color: "white" }}
     >
-      {/* 2. Gunakan komponen Navbar di sini (Menyatu dengan logic Auth & Hamburger) */}
       <Navbar />
 
-      {/* --- HEADER KATALOG --- */}
       <div style={{ textAlign: "center", padding: "120px 20px 20px" }}>
         <h1
           style={{
@@ -116,7 +158,6 @@ export default function Katalog() {
         </p>
       </div>
 
-      {/* --- FILTER PROVINSI --- */}
       <div
         className="filter-provinsi"
         style={{
@@ -152,7 +193,6 @@ export default function Katalog() {
         )}
       </div>
 
-      {/* --- GRID PRODUK (KATALOG) --- */}
       <section
         className="featured-products"
         style={{ padding: "0 5%", paddingBottom: "80px" }}
@@ -202,10 +242,10 @@ export default function Katalog() {
                     display: "inline-block",
                   }}
                 >
-                  {item.prov}
+                  {item.provinsi || item.prov}
                 </span>
                 <img
-                  src="/img/logo-preview.jpg"
+                  src={item.gambar_url || "/img/logo-preview.jpg"}
                   className="img-produk"
                   alt={item.nama}
                   style={{
@@ -244,7 +284,7 @@ export default function Katalog() {
                     marginBottom: "20px",
                   }}
                 >
-                  {item.desc}
+                  {item.deskripsi || item.desc}
                 </p>
               </div>
 
@@ -266,7 +306,12 @@ export default function Katalog() {
                     color: "#ffd700",
                   }}
                 >
-                  Rp 70k
+                  Rp{" "}
+                  {item.harga
+                    ? typeof item.harga === "number"
+                      ? item.harga.toLocaleString()
+                      : item.harga
+                    : "70k"}
                 </div>
                 <button
                   className="btn-detail"
@@ -281,7 +326,7 @@ export default function Katalog() {
                     fontWeight: "600",
                   }}
                   onClick={() => {
-                    const url = `/detail-produk?nama=${encodeURIComponent(item.nama)}&harga=Rp 70k&desc=${encodeURIComponent(item.desc)}`;
+                    const url = `/detail-produk?nama=${encodeURIComponent(item.nama)}&harga=${encodeURIComponent(item.harga || "70k")}&desc=${encodeURIComponent(item.deskripsi || item.desc)}`;
                     window.location.href = url;
                   }}
                 >
@@ -293,7 +338,6 @@ export default function Katalog() {
         </div>
       </section>
 
-      {/* --- FOOTER --- */}
       <footer
         style={{
           textAlign: "center",

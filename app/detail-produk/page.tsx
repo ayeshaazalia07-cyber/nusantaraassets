@@ -141,14 +141,16 @@ function DetailContent() {
               cursor: "pointer",
             }}
             onClick={() => {
-              // Validasi menggunakan state isLoggedIn dari Firebase Auth
+              // 1. Cek status login
               if (!isLoggedIn) {
                 alert("Ups! Kamu harus login dulu sebelum membeli.");
                 window.location.href = "/login";
                 return;
               }
-              // Jika login terdeteksi, lanjut ke pembayaran
-              window.location.href = "/pembayaran";
+
+              // 2. Jika sudah login, kirim data nama dan harga ke URL pembayaran
+              // Menggunakan encodeURIComponent agar karakter seperti spasi atau simbol tetap aman di URL
+              window.location.href = `/pembayaran?nama=${encodeURIComponent(nama)}&harga=${encodeURIComponent(harga)}`;
             }}
           >
             Beli Sekarang
