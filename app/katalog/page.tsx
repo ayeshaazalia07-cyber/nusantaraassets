@@ -245,7 +245,12 @@ export default function Katalog() {
                   {item.provinsi || item.prov}
                 </span>
                 <img
-                  src={item.gambar_url || "/img/logo-preview.jpg"}
+                  /* MODIFIKASI: Menambahkan image_preview dan imageRendering pixelated */
+                  src={
+                    item.image_preview ||
+                    item.gambar_url ||
+                    "/img/logo-preview.jpg"
+                  }
                   className="img-produk"
                   alt={item.nama}
                   style={{
@@ -253,6 +258,7 @@ export default function Katalog() {
                     aspectRatio: "16/9",
                     objectFit: "cover",
                     display: "block",
+                    imageRendering: "pixelated",
                   }}
                 />
               </div>
@@ -309,7 +315,7 @@ export default function Katalog() {
                   Rp{" "}
                   {item.harga
                     ? typeof item.harga === "number"
-                      ? item.harga.toLocaleString()
+                      ? item.harga.toLocaleString("id-ID")
                       : item.harga
                     : "70k"}
                 </div>

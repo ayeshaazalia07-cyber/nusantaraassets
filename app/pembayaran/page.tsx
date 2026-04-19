@@ -22,6 +22,9 @@ function PaymentContent() {
   const [totalTagihan, setTotalTagihan] = useState(0);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  // TAMBAHAN: State untuk menyimpan URL file asli dari database
+  const [downloadUrl, setDownloadUrl] = useState<string>("");
+
   const [buktiPembayaran, setBuktiPembayaran] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -40,8 +43,9 @@ function PaymentContent() {
         localStorage.getItem("nusantaraCart") || "[]",
       );
       const totalKeranjang = savedCart.reduce((acc: number, item: any) => {
-        const angkaSaja = parseInt(item.harga.replace(/[^0-9]/g, "")) || 0;
-        const hargaFinal = item.harga.toLowerCase().includes("k")
+        const hargaStr = String(item.harga || "0");
+        const angkaSaja = parseInt(hargaStr.replace(/[^0-9]/g, "")) || 0;
+        const hargaFinal = hargaStr.toLowerCase().includes("k")
           ? angkaSaja * 1000
           : angkaSaja;
         return acc + hargaFinal;
@@ -49,7 +53,7 @@ function PaymentContent() {
       setTotalTagihan(totalKeranjang);
     }
 
-    // 2. RADAR REAL-TIME (Cek Status Success dengan Batas Waktu 3 Jam)
+    // 2. RADAR REAL-TIME (Cek Status Success)
     const userEmail = localStorage.getItem("userEmail");
     if (userEmail) {
       const q = query(
@@ -61,6 +65,12 @@ function PaymentContent() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         if (!snapshot.empty) {
           const docData = snapshot.docs[0].data();
+
+          // TAMBAHAN: Ambil link download dari data transaksi jika tersedia
+          if (docData.download_link) {
+            setDownloadUrl(docData.download_link);
+          }
+
           const timeConfirmed =
             docData.verifiedAt?.toDate() || docData.createdAt?.toDate();
           if (timeConfirmed) {
@@ -159,9 +169,11 @@ function PaymentContent() {
         status: "pending",
         createdAt: serverTimestamp(),
         verifiedAt: null,
+        // TAMBAHAN: Menyimpan info asset_id agar admin tahu file mana yang harus dikirim
+        asset_id: searchParams.get("id") || "N/A",
       });
 
-      // 2. KIRIM NOTIFIKASI EMAILJS KE ADMIN (Menggunakan Env Variables)
+      // 2. KIRIM NOTIFIKASI EMAILJS KE ADMIN
       const emailParams = {
         from_name: localStorage.getItem("userName") || "Pembeli",
         user_email: localStorage.getItem("userEmail") || "Tidak ada email",
@@ -233,10 +245,22 @@ function PaymentContent() {
                 mengunduh assets mu ya! Terimakasih"
               </p>
             </div>
+
+            {/* MODIFIKASI: Tombol download sekarang dinamis */}
             <button
               className="btn-confirm"
               style={{ marginTop: "30px" }}
-              onClick={() => window.open("/assets/dummy-file.zip")}
+              onClick={() => {
+                if (downloadUrl) {
+                  window.open(downloadUrl);
+                } else {
+                  Swal.fire(
+                    "Sabar ya!",
+                    "Admin sedang menyiapkan link download untukmu.",
+                    "info",
+                  );
+                }
+              }}
             >
               DOWNLOAD ASSET SEKARANG
             </button>
@@ -292,6 +316,7 @@ function PaymentContent() {
           <h1 className="payment-amount">
             Rp {totalTagihan.toLocaleString("id-ID")}
           </h1>
+
           <div className="method-grid">
             {listMetode.map((m) => (
               <button
@@ -312,12 +337,14 @@ function PaymentContent() {
               </button>
             ))}
           </div>
+
           {metode === "qris" && (
             <div className="qr-area">
               <p>Silakan Scan QRIS:</p>
               <img src="/img/logo-qris.png" alt="QR" className="qr-img" />
             </div>
           )}
+
           <div className="upload-section">
             <p className="upload-label">Wajib Upload Bukti Pembayaran:</p>
             <input
@@ -338,13 +365,13 @@ function PaymentContent() {
                 marginTop: "10px",
               }}
             >
-              *Maksimal ukuran file adalah 700KB (Gunakan format
-              JPG/PNG/Screenshot)
+              *Maksimal ukuran file adalah 700KB!
             </p>
             {previewUrl && (
               <img src={previewUrl} alt="Preview" className="img-preview" />
             )}
           </div>
+
           <button
             onClick={handleKonfirmasi}
             className={`btn-confirm ${!buktiPembayaran || isUploading ? "disabled" : ""}`}
@@ -374,10 +401,6 @@ function PaymentContent() {
           text-align: center;
           border: 1px solid rgba(255, 255, 255, 0.05);
         }
-        .payment-title {
-          font-size: 24px;
-          font-weight: 800;
-        }
         .payment-title span {
           color: #ffd700;
         }
@@ -401,7 +424,7 @@ function PaymentContent() {
           border-radius: 15px;
           cursor: pointer;
           display: flex;
-          align-items: center; /* Rata tengah vertikal */
+          align-items: center;
           justify-content: space-between;
           transition: 0.3s;
         }
@@ -411,11 +434,11 @@ function PaymentContent() {
         }
         .method-left {
           display: flex;
-          align-items: center; /* Rata tengah logo & teks */
+          align-items: center;
           gap: 15px;
         }
         .method-logo-img {
-          height: 22px; /* Ukuran logo tetap */
+          height: 22px;
           width: auto;
           object-fit: contain;
         }
