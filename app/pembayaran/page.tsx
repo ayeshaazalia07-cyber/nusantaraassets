@@ -123,10 +123,10 @@ function PaymentContent() {
 
   const dataNomor: any = {
     qris: "Scan QR Code di bawah",
-    dana: "0812-3456-7890 (Ayesha Putri)",
-    shopeepay: "0812-3456-7890 (Echa)",
-    gopay: "0812-3456-7890 (NusantaraAssets)",
-    ovo: "0812-3456-7890 (Ayesha Putri Azalia)",
+    dana: "+62 821-3753-4026 (Nova Chauliyatul Faizah)",
+    shopeepay: "+62 821-3753-4026 (NOVA CHAULIYATUL FAIZAH)",
+    gopay: "+62 821-3753-4026 (NOVA CHAULIYATUL FAIZAH)",
+    ovo: "+62 821-3753-4026 (Nova Chauliyatul Faizah)",
   };
 
   const selectMetode = (m: string) => {
@@ -341,7 +341,7 @@ function PaymentContent() {
           {metode === "qris" && (
             <div className="qr-area">
               <p>Silakan Scan QRIS:</p>
-              <img src="/img/logo-qris.png" alt="QR" className="qr-img" />
+              <img src="/img/qriss-na.png" alt="QR" className="qr-img" />
             </div>
           )}
 
