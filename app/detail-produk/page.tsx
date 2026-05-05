@@ -17,13 +17,14 @@ function DetailContent() {
     return () => unsubscribe();
   }, []);
 
-  // ✅ Tambah id dari searchParams
+  // ✅ Ambil data dari searchParams (Termasuk Parameter 'img' baru)
   const id = searchParams.get("id") || "";
   const nama = searchParams.get("nama") || "Aset Nusantara";
   const harga = searchParams.get("harga") || "Rp 70k";
   const desc =
     searchParams.get("desc") ||
     "Aset berkualitas tinggi dari kebudayaan Nusantara.";
+  const previewImg = searchParams.get("img") || "/img/logo-preview.jpg"; // ✅ TAMBAHAN: AMBIL PARAMETER GAMBAR DI SINI
 
   const isTrial = searchParams.get("isTrial") === "true";
   const fileUrl = searchParams.get("fileUrl") || "";
@@ -107,7 +108,7 @@ function DetailContent() {
         )}
       </div>
 
-      {/* Konten Detail (padding-top cukup agar tidak tertutup navbar) */}
+      {/* Konten Detail */}
       <div
         className="detail-wrapper"
         style={{
@@ -117,7 +118,6 @@ function DetailContent() {
           textAlign: "center",
         }}
       >
-        {/* ... sisa konten tidak berubah ... */}
         <div
           style={{
             width: "100%",
@@ -130,12 +130,19 @@ function DetailContent() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            overflow: "hidden", // Agar gambar tidak keluar dari border radius
           }}
         >
+          {/* ✅ FIX: Gambar sekarang pakai variabel previewImg dari URL */}
           <img
-            src="/img/logo-preview.jpg"
-            alt="Preview"
-            style={{ width: "100%", borderRadius: "23px" }}
+            src={previewImg}
+            alt="Preview Aset"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              borderRadius: "23px",
+            }}
           />
         </div>
 
@@ -252,8 +259,6 @@ function DetailContent() {
                 window.location.href = "/login";
                 return;
               }
-
-              // ✅ Sekarang id ikut dikirim ke halaman pembayaran
               window.location.href = `/pembayaran?id=${encodeURIComponent(id)}&nama=${encodeURIComponent(nama)}&harga=${encodeURIComponent(harga)}`;
             }}
           >
@@ -263,7 +268,6 @@ function DetailContent() {
       </div>
 
       <style jsx>{`
-        /* ============ NAVBAR FIXED ============ */
         .navbar {
           display: flex;
           justify-content: space-between;
@@ -274,8 +278,6 @@ function DetailContent() {
           -webkit-backdrop-filter: blur(10px);
           border-bottom: 1px solid rgba(255, 215, 0, 0.15);
         }
-
-        /* Hamburger */
         .hamburger {
           display: none;
           flex-direction: column;
@@ -283,7 +285,6 @@ function DetailContent() {
           cursor: pointer;
           z-index: 50;
         }
-
         .hamburger .bar {
           width: 25px;
           height: 3px;
@@ -291,7 +292,6 @@ function DetailContent() {
           transition: all 0.3s ease;
           border-radius: 5px;
         }
-
         .hamburger .bar.open:nth-child(1) {
           transform: translateY(8px) rotate(45deg);
         }
@@ -301,8 +301,6 @@ function DetailContent() {
         .hamburger .bar.open:nth-child(3) {
           transform: translateY(-8px) rotate(-45deg);
         }
-
-        /* Dropdown mobile */
         .mobile-menu {
           background: #1e293b;
           padding: 15px 5%;
@@ -317,7 +315,6 @@ function DetailContent() {
           display: block;
           padding: 10px 0;
         }
-
         @keyframes slideDown {
           from {
             opacity: 0;
@@ -328,23 +325,26 @@ function DetailContent() {
             transform: translateY(0);
           }
         }
-
-        /* Tombol hover glow */
         .btn-trial:hover {
-          box-shadow: 0 0 15px #10b981, 0 0 30px #10b981 !important;
+          box-shadow:
+            0 0 15px #10b981,
+            0 0 30px #10b981 !important;
           transform: translateY(-3px);
         }
         .btn-cart:hover {
           background: #ffd700 !important;
           color: #0f172a !important;
-          box-shadow: 0 0 15px #ffd700, 0 0 30px #ffd700 !important;
+          box-shadow:
+            0 0 15px #ffd700,
+            0 0 30px #ffd700 !important;
           transform: translateY(-3px);
         }
         .btn-buy:hover {
-          box-shadow: 0 0 15px #ffd700, 0 0 30px #ffd700 !important;
+          box-shadow:
+            0 0 15px #ffd700,
+            0 0 30px #ffd700 !important;
           transform: translateY(-3px);
         }
-
         @media (max-width: 768px) {
           .desktop-menu {
             display: none;

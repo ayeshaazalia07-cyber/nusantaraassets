@@ -10,7 +10,6 @@ export default function Katalog() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- DATA CADANGAN (Fallback jika database kosong) ---
   const daftarAsetManual = [
     {
       id: 1,
@@ -22,75 +21,12 @@ export default function Katalog() {
       harga: "70k",
     },
     {
-      id: 2,
-      nama: "Angklung Rhythm Kit",
-      provinsi: "JAWA BARAT",
-      kategori: "jawa-barat",
-      deskripsi:
-        "Instrumen angklung berbagai ukuran untuk item pick-up/power-up.",
-      harga: "70k",
-    },
-    {
-      id: 3,
-      nama: "Kujang Warrior Blades",
-      provinsi: "JAWA BARAT",
-      kategori: "jawa-barat",
-      deskripsi:
-        "Koleksi senjata tradisional Kujang variasi warna emas, perak, & baja.",
-      harga: "70k",
-    },
-    {
-      id: 4,
-      nama: "Wayang Kulit Sprite Sheet",
-      provinsi: "JAWA TENGAH",
-      kategori: "jawa-tengah",
-      deskripsi:
-        "Karakter pixel Gatotkaca dengan detail sendi untuk animasi side-scroller.",
-      harga: "70k",
-    },
-    {
-      id: 5,
-      nama: "Borobudur Stone Tiles",
-      provinsi: "JAWA TENGAH",
-      kategori: "jawa-tengah",
-      deskripsi:
-        "Ground tiles & struktur stupa mini untuk petualangan reruntuhan kuno.",
-      harga: "70k",
-    },
-    {
-      id: 6,
-      nama: "Reog Ponorogo Mask",
-      provinsi: "JAWA TIMUR",
-      kategori: "jawa-timur",
-      deskripsi:
-        "Aset headgear bos musuh detail, resolusi pixel yang bold & eksotis.",
-      harga: "70k",
-    },
-    {
-      id: 7,
-      nama: "Bromo Volcanic Biome",
-      provinsi: "JAWA TIMUR",
-      kategori: "jawa-timur",
-      deskripsi:
-        "Paket lingkungan gunung berapi, pasir berbisik, & kawah berasap.",
-      harga: "70k",
-    },
-    {
       id: 8,
       nama: "Gapura Candi Bentar",
       provinsi: "BALI",
       kategori: "bali",
       deskripsi:
         "Struktur gerbang khas Bali untuk checkpoint atau pintu masuk area.",
-      harga: "70k",
-    },
-    {
-      id: 9,
-      nama: "Frangipani Decor",
-      provinsi: "BALI",
-      kategori: "bali",
-      deskripsi:
-        "Elemen dekoratif bunga kamboja & sesajen untuk detail lingkungan.",
       harga: "70k",
     },
     {
@@ -137,7 +73,6 @@ export default function Katalog() {
     fetchProducts();
   }, []);
 
-  // ✅ FIX FILTER: Menyamakan format kategori ke lowercase agar Bali muncul
   const asetFiltered =
     kategori === "semua"
       ? products
@@ -346,6 +281,10 @@ export default function Katalog() {
                     fontWeight: "600",
                   }}
                   onClick={() => {
+                    const imgUrl =
+                      item.image_preview ||
+                      item.gambar_url ||
+                      "/img/logo-preview.jpg";
                     const url = `/detail-produk?id=${encodeURIComponent(
                       item.id,
                     )}&nama=${encodeURIComponent(
@@ -354,7 +293,7 @@ export default function Katalog() {
                       item.harga || "70k",
                     )}&desc=${encodeURIComponent(
                       item.deskripsi || item.desc || "",
-                    )}`;
+                    )}&img=${encodeURIComponent(imgUrl)}`;
                     window.location.href = url;
                   }}
                 >
@@ -392,7 +331,6 @@ export default function Katalog() {
         </p>
       </footer>
 
-      {/* --- STYLING KHUSUS UNTUK FOLLOW US (SAMA DENGAN PAGE TSX) --- */}
       <style jsx>{`
         .highlight-follow {
           display: inline-block !important;
@@ -403,8 +341,6 @@ export default function Katalog() {
           font-weight: 800 !important;
           text-decoration: none !important;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-
-          /* Efek Border Kuning & Glow */
           border: 2px solid #eab308 !important;
           box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
         }
