@@ -26,38 +26,61 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  // LOGIKA: Ambil Aset Populer berdasarkan jumlah data di tabel 'orders' Supabase
+  // LOGIKA: Ambil Aset Populer berdasarkan data di tabel 'orders' Supabase
   useEffect(() => {
     const fetchPopularAssets = async () => {
       try {
         setIsLoading(true);
         const supabase = createSupabaseBrowser();
 
+        // 1. Ambil data dari tabel orders
         const { data: orders, error: orderError } = await supabase
           .from("orders")
-          .select("product_id");
+          .select("*");
 
         if (orderError) throw orderError;
 
         if (orders && orders.length > 0) {
           const counts: { [key: string]: number } = {};
+
           orders.forEach((o) => {
-            counts[o.product_id] = (counts[o.product_id] || 0) + 1;
+            // Mengambil key dari product_id (ID) atau produk (Nama Teks)
+            const key = o.product_id || o.produk || o.nama_produk;
+            if (key) counts[key] = (counts[key] || 0) + 1;
           });
 
-          const sortedIds = Object.keys(counts)
+          const sortedKeys = Object.keys(counts)
             .sort((a, b) => counts[b] - counts[a])
             .slice(0, 3);
 
-          const { data: products, error: productError } = await supabase
-            .from("product")
-            .select("*")
-            .in("id", sortedIds);
+          // Cek apakah data yang didapat berupa angka atau teks nama
+          const firstKey = sortedKeys[0];
+          const isNumeric = firstKey && !isNaN(Number(firstKey));
+
+          let query = supabase.from("product").select("*");
+
+          if (isNumeric) {
+            // Konversi ke Number agar cocok dengan tipe data ID di Supabase
+            query = query.in(
+              "id",
+              sortedKeys.map((k) => Number(k)),
+            );
+          } else {
+            // Cari berdasarkan nama jika data di orders berupa string nama produk
+            query = query.in("nama", sortedKeys);
+          }
+
+          const { data: products, error: productError } = await query;
 
           if (productError) throw productError;
 
-          const finalData = sortedIds
-            .map((id) => products?.find((p) => p.id === id))
+          // Urutkan kembali sesuai ranking popularitas
+          const finalData = sortedKeys
+            .map((key) =>
+              products?.find(
+                (p) => String(p.id) === String(key) || p.nama === key,
+              ),
+            )
             .filter(Boolean);
 
           setTopProducts(finalData);
@@ -134,8 +157,13 @@ export default function Home() {
               <div className="card-aset" key={produk.id}>
                 <div className="preview-container">
                   <span className="badge">{produk.kategori || "ASET 2D"}</span>
+                  {/* ✅ Perbaikan: Menggunakan gambar_url sesuai database */}
                   <img
-                    src={produk.image_preview || "/img/logo-preview.jpg"}
+                    src={
+                      produk.gambar_url ||
+                      produk.image_preview ||
+                      "/img/logo-preview.jpg"
+                    }
                     className="img-produk"
                     alt={produk.nama}
                   />
@@ -149,7 +177,12 @@ export default function Home() {
                   <button
                     className="btn-detail"
                     onClick={() => {
-                      const url = `/detail-produk?nama=${encodeURIComponent(produk.nama)}&harga=${encodeURIComponent(produk.harga)}&desc=${encodeURIComponent(produk.deskripsi)}&isTrial=${produk.is_free_trial}&fileUrl=${encodeURIComponent(produk.file_url || "")}`;
+                      // ✅ Perbaikan: Mengirim link gambar_url ke halaman detail
+                      const finalImg =
+                        produk.gambar_url ||
+                        produk.image_preview ||
+                        "/img/logo-preview.jpg";
+                      const url = `/detail-produk?id=${produk.id}&nama=${encodeURIComponent(produk.nama)}&harga=${encodeURIComponent(produk.harga)}&desc=${encodeURIComponent(produk.deskripsi)}&img=${encodeURIComponent(finalImg)}`;
                       window.location.href = url;
                     }}
                   >
@@ -207,7 +240,7 @@ export default function Home() {
               style={{ resize: "none" }}
             ></textarea>
             <button type="submit" className="btn-utama">
-              Kirim Saran
+              Kirimin Saran
             </button>
           </form>
         </div>
