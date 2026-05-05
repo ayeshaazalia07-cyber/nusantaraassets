@@ -73,12 +73,14 @@ export default function Katalog() {
     fetchProducts();
   }, []);
 
+  // ✅ FIX FILTER: Menyamakan format kategori (spasi jadi strip, huruf kecil semua)
   const asetFiltered =
     kategori === "semua"
       ? products
       : products.filter((item) => {
           const itemCat = (item.kategori || item.cat || "")
             .toLowerCase()
+            .replace(/\s+/g, "-") // Mengubah spasi menjadi strip agar cocok dengan tombol
             .trim();
           return itemCat === kategori.toLowerCase().trim();
         });
@@ -196,8 +198,8 @@ export default function Katalog() {
                 </span>
                 <img
                   src={
-                    item.image_preview ||
                     item.gambar_url ||
+                    item.image_preview ||
                     "/img/logo-preview.jpg"
                   }
                   className="img-produk"
@@ -207,7 +209,6 @@ export default function Katalog() {
                     aspectRatio: "16/9",
                     objectFit: "cover",
                     display: "block",
-                    imageRendering: "pixelated",
                   }}
                 />
               </div>
@@ -282,18 +283,10 @@ export default function Katalog() {
                   }}
                   onClick={() => {
                     const imgUrl =
-                      item.image_preview ||
                       item.gambar_url ||
+                      item.image_preview ||
                       "/img/logo-preview.jpg";
-                    const url = `/detail-produk?id=${encodeURIComponent(
-                      item.id,
-                    )}&nama=${encodeURIComponent(
-                      item.nama,
-                    )}&harga=${encodeURIComponent(
-                      item.harga || "70k",
-                    )}&desc=${encodeURIComponent(
-                      item.deskripsi || item.desc || "",
-                    )}&img=${encodeURIComponent(imgUrl)}`;
+                    const url = `/detail-produk?id=${encodeURIComponent(item.id)}&nama=${encodeURIComponent(item.nama)}&harga=${encodeURIComponent(item.harga || "70k")}&desc=${encodeURIComponent(item.deskripsi || item.desc || "")}&img=${encodeURIComponent(imgUrl)}`;
                     window.location.href = url;
                   }}
                 >
@@ -344,7 +337,6 @@ export default function Katalog() {
           border: 2px solid #eab308 !important;
           box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
         }
-
         .highlight-follow:hover {
           transform: translateY(-3px) !important;
           background: #ffe44d !important;
