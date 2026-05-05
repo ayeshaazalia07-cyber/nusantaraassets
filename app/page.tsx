@@ -6,9 +6,12 @@ import { auth, db } from "@/app/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import Swal from "sweetalert2";
+import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
+  const [topProducts, setTopProducts] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [formData, setFormData] = useState({
     nama: "",
@@ -21,6 +24,52 @@ export default function Home() {
       setUser(currentUser);
     });
     return () => unsubscribe();
+  }, []);
+
+  // LOGIKA: Ambil Aset Populer berdasarkan jumlah data di tabel 'orders' Supabase
+  useEffect(() => {
+    const fetchPopularAssets = async () => {
+      try {
+        setIsLoading(true);
+        const supabase = createSupabaseBrowser();
+
+        const { data: orders, error: orderError } = await supabase
+          .from("orders")
+          .select("product_id");
+
+        if (orderError) throw orderError;
+
+        if (orders && orders.length > 0) {
+          const counts: { [key: string]: number } = {};
+          orders.forEach((o) => {
+            counts[o.product_id] = (counts[o.product_id] || 0) + 1;
+          });
+
+          const sortedIds = Object.keys(counts)
+            .sort((a, b) => counts[b] - counts[a])
+            .slice(0, 3);
+
+          const { data: products, error: productError } = await supabase
+            .from("product")
+            .select("*")
+            .in("id", sortedIds);
+
+          if (productError) throw productError;
+
+          const finalData = sortedIds
+            .map((id) => products?.find((p) => p.id === id))
+            .filter(Boolean);
+
+          setTopProducts(finalData);
+        }
+      } catch (err) {
+        console.error("Gagal memuat produk populer:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPopularAssets();
   }, []);
 
   const kirimSaran = async (e: React.FormEvent) => {
@@ -53,7 +102,6 @@ export default function Home() {
     <main>
       <Navbar />
 
-      {/* --- HERO SECTION --- */}
       <header className="hero">
         <h1>Bawa Budaya Lokal ke Game Global</h1>
         <p>
@@ -67,106 +115,64 @@ export default function Home() {
         </div>
       </header>
 
-      {/* --- KATALOG ASET TERPOPULER --- */}
       <h2 className="katalog-judul">Aset Terpopuler</h2>
       <section className="featured-products">
         <div className="grid-aset">
-          {/* Aset 1: Jawa Tengah */}
-          <div className="card-aset">
-            <div className="preview-container">
-              <span className="badge">JAWA TENGAH</span>
-              <img
-                src="/img/logo-preview.jpg"
-                className="img-produk"
-                alt="Wayang Kulit"
-              />
-            </div>
-            <div className="card-content">
-              <h3>Wayang Kulit Sprite Sheet</h3>
-              <p>
-                Karakter pixel terinspirasi Gatotkaca dengan detail sendi untuk
-                animasi side-scroller.
-              </p>
-            </div>
-            <div className="harga-kontainer">
-              <div className="harga">Rp 70k</div>
-              <button
-                className="btn-detail"
-                onClick={() => {
-                  const url = `/detail-produk?nama=${encodeURIComponent("Wayang Kulit Sprite Sheet")}&harga=Rp 70k&desc=${encodeURIComponent("Karakter pixel terinspirasi Gatotkaca dengan detail sendi untuk animasi side-scroller.")}`;
-                  window.location.href = url;
-                }}
-              >
-                Detail
-              </button>
-            </div>
-          </div>
-
-          {/* Aset 2: Jawa Barat */}
-          <div className="card-aset">
-            <div className="preview-container">
-              <span className="badge">JAWA BARAT</span>
-              <img
-                src="/img/logo-preview.jpg"
-                className="img-produk"
-                alt="Mega Mendung"
-              />
-            </div>
-            <div className="card-content">
-              <h3>Mega Mendung Sky Set</h3>
-              <p>
-                Tile awan berlapis khas Cirebon dengan gradasi biru untuk level
-                atmosferik.
-              </p>
-            </div>
-            <div className="harga-kontainer">
-              <div className="harga">Rp 70k</div>
-              <button
-                className="btn-detail"
-                onClick={() => {
-                  const url = `/detail-produk?nama=${encodeURIComponent("Mega Mendung Sky Set")}&harga=Rp 70k&desc=${encodeURIComponent("Tile awan berlapis khas Cirebon dengan gradasi biru untuk level atmosferik.")}`;
-                  window.location.href = url;
-                }}
-              >
-                Detail
-              </button>
-            </div>
-          </div>
-
-          {/* Aset 3: Jawa Timur */}
-          <div className="card-aset">
-            <div className="preview-container">
-              <span className="badge">JAWA TIMUR</span>
-              <img
-                src="/img/logo-preview.jpg"
-                className="img-produk"
-                alt="Reog Mask"
-              />
-            </div>
-            <div className="card-content">
-              <h3>Reog Ponorogo Mask</h3>
-              <p>
-                Aset headgear bos musuh detail, menampilkan kepala singa dan
-                bulu merak.
-              </p>
-            </div>
-            <div className="harga-kontainer">
-              <div className="harga">Rp 70k</div>
-              <button
-                className="btn-detail"
-                onClick={() => {
-                  const url = `/detail-produk?nama=${encodeURIComponent("Reog Ponorogo Mask")}&harga=Rp 70k&desc=${encodeURIComponent("Aset headgear bos musuh detail, menampilkan kepala singa dan bulu merak.")}`;
-                  window.location.href = url;
-                }}
-              >
-                Detail
-              </button>
-            </div>
-          </div>
+          {isLoading ? (
+            <p
+              style={{
+                textAlign: "center",
+                width: "100%",
+                color: "#94a3b8",
+                gridColumn: "1 / -1",
+              }}
+            >
+              ⏳ Menganalisis tren pasar Nusantara...
+            </p>
+          ) : topProducts.length > 0 ? (
+            topProducts.map((produk) => (
+              <div className="card-aset" key={produk.id}>
+                <div className="preview-container">
+                  <span className="badge">{produk.kategori || "ASET 2D"}</span>
+                  <img
+                    src={produk.image_preview || "/img/logo-preview.jpg"}
+                    className="img-produk"
+                    alt={produk.nama}
+                  />
+                </div>
+                <div className="card-content">
+                  <h3>{produk.nama}</h3>
+                  <p>{produk.deskripsi}</p>
+                </div>
+                <div className="harga-kontainer">
+                  <div className="harga">{produk.harga}</div>
+                  <button
+                    className="btn-detail"
+                    onClick={() => {
+                      const url = `/detail-produk?nama=${encodeURIComponent(produk.nama)}&harga=${encodeURIComponent(produk.harga)}&desc=${encodeURIComponent(produk.deskripsi)}&isTrial=${produk.is_free_trial}&fileUrl=${encodeURIComponent(produk.file_url || "")}`;
+                      window.location.href = url;
+                    }}
+                  >
+                    Detail
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p
+              style={{
+                textAlign: "center",
+                width: "100%",
+                color: "#94a3b8",
+                gridColumn: "1 / -1",
+              }}
+            >
+              Belum ada data penjualan tersedia saat ini.
+            </p>
+          )}
         </div>
       </section>
 
-      {/* --- KOTAK SARAN --- */}
       <section id="kotak-saran" className="saran-section">
         <div className="saran-container">
           <h2>Punya Ide Aset Baru?</h2>
@@ -198,9 +204,7 @@ export default function Home() {
               onChange={(e) =>
                 setFormData({ ...formData, pesan: e.target.value })
               }
-              style={{
-                resize: "none",
-              }}
+              style={{ resize: "none" }}
             ></textarea>
             <button type="submit" className="btn-utama">
               Kirim Saran
@@ -209,7 +213,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* --- FOOTER --- */}
       <footer>
         <div style={{ marginBottom: "35px" }}>
           <a
@@ -227,7 +230,6 @@ export default function Home() {
         </p>
       </footer>
 
-      {/* --- STYLING KHUSUS UNTUK FOLLOW US --- */}
       <style jsx>{`
         .highlight-follow {
           display: inline-block !important;
@@ -238,20 +240,15 @@ export default function Home() {
           font-weight: 800 !important;
           text-decoration: none !important;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-
-          /* Efek Border Kuning & Glow */
           border: 2px solid #eab308 !important;
           box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
         }
-
         .highlight-follow:hover {
           transform: translateY(-3px) !important;
           background: #ffe44d !important;
           box-shadow: 0 8px 25px rgba(255, 215, 0, 0.4) !important;
           border-color: #ffd700 !important;
         }
-
-        /* Responsive Footer */
         footer {
           padding: 60px 20px;
           text-align: center;
