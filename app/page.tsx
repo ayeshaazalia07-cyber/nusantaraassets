@@ -16,11 +16,8 @@ export default function Home() {
     pesan: "",
   });
 
-  // ✅ GANTI localStorage dengan Firebase onAuthStateChanged
   useEffect(() => {
-    console.log("[page.tsx] onAuthStateChanged: mulai listen...");
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      console.log("[page.tsx] Auth state:", currentUser ? `LOGIN: ${currentUser.email}` : "TIDAK ADA USER (logout)");
       setUser(currentUser);
     });
     return () => unsubscribe();
@@ -78,11 +75,18 @@ export default function Home() {
           <div className="card-aset">
             <div className="preview-container">
               <span className="badge">JAWA TENGAH</span>
-              <img src="/img/logo-preview.jpg" className="img-produk" alt="Wayang Kulit" />
+              <img
+                src="/img/logo-preview.jpg"
+                className="img-produk"
+                alt="Wayang Kulit"
+              />
             </div>
             <div className="card-content">
               <h3>Wayang Kulit Sprite Sheet</h3>
-              <p>Karakter pixel terinspirasi Gatotkaca dengan detail sendi untuk animasi side-scroller.</p>
+              <p>
+                Karakter pixel terinspirasi Gatotkaca dengan detail sendi untuk
+                animasi side-scroller.
+              </p>
             </div>
             <div className="harga-kontainer">
               <div className="harga">Rp 70k</div>
@@ -102,11 +106,18 @@ export default function Home() {
           <div className="card-aset">
             <div className="preview-container">
               <span className="badge">JAWA BARAT</span>
-              <img src="/img/logo-preview.jpg" className="img-produk" alt="Mega Mendung" />
+              <img
+                src="/img/logo-preview.jpg"
+                className="img-produk"
+                alt="Mega Mendung"
+              />
             </div>
             <div className="card-content">
               <h3>Mega Mendung Sky Set</h3>
-              <p>Tile awan berlapis khas Cirebon dengan gradasi biru untuk level atmosferik.</p>
+              <p>
+                Tile awan berlapis khas Cirebon dengan gradasi biru untuk level
+                atmosferik.
+              </p>
             </div>
             <div className="harga-kontainer">
               <div className="harga">Rp 70k</div>
@@ -126,11 +137,18 @@ export default function Home() {
           <div className="card-aset">
             <div className="preview-container">
               <span className="badge">JAWA TIMUR</span>
-              <img src="/img/logo-preview.jpg" className="img-produk" alt="Reog Mask" />
+              <img
+                src="/img/logo-preview.jpg"
+                className="img-produk"
+                alt="Reog Mask"
+              />
             </div>
             <div className="card-content">
               <h3>Reog Ponorogo Mask</h3>
-              <p>Aset headgear bos musuh detail, menampilkan kepala singa dan bulu merak.</p>
+              <p>
+                Aset headgear bos musuh detail, menampilkan kepala singa dan
+                bulu merak.
+              </p>
             </div>
             <div className="harga-kontainer">
               <div className="harga">Rp 70k</div>
@@ -159,21 +177,30 @@ export default function Home() {
               placeholder="Nama kamu"
               required
               value={formData.nama}
-              onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, nama: e.target.value })
+              }
             />
             <input
               type="email"
               placeholder="Email kamu"
               required
               value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, email: e.target.value })
+              }
             />
             <textarea
               placeholder="Contoh: Buatkan aset Candi Prambanan..."
               rows={5}
               required
               value={formData.pesan}
-              onChange={(e) => setFormData({ ...formData, pesan: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, pesan: e.target.value })
+              }
+              style={{
+                resize: "none",
+              }}
             ></textarea>
             <button type="submit" className="btn-utama">
               Kirim Saran
@@ -184,21 +211,55 @@ export default function Home() {
 
       {/* --- FOOTER --- */}
       <footer>
-        <div style={{ marginBottom: "25px" }}>
+        <div style={{ marginBottom: "35px" }}>
           <a
             href="https://instagram.com/nusantaraassets5"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "#ffd700", textDecoration: "none", fontWeight: "600" }}
+            className="highlight-follow"
           >
-            <span>Follow us on Instagram</span>
+            Follow us on Instagram
           </a>
         </div>
-        <p>&copy; 2026 NusantaraAssets - Oleh FantasticFive</p>
+        <p>&copy; NusantaraAssets - Oleh FantasticFive</p>
         <p style={{ fontSize: "12px", marginTop: "10px" }}>
-          Informatics | Universitas Jenderal Soedirman
+          Cultural Heritage in Every Pixel — © 2026. All Rights Reserved.
         </p>
       </footer>
+
+      {/* --- STYLING KHUSUS UNTUK FOLLOW US --- */}
+      <style jsx>{`
+        .highlight-follow {
+          display: inline-block !important;
+          background: #ffd700 !important;
+          color: #020617 !important;
+          padding: 10px 24px !important;
+          border-radius: 12px !important;
+          font-weight: 800 !important;
+          text-decoration: none !important;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+
+          /* Efek Border Kuning & Glow */
+          border: 2px solid #eab308 !important;
+          box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
+        }
+
+        .highlight-follow:hover {
+          transform: translateY(-3px) !important;
+          background: #ffe44d !important;
+          box-shadow: 0 8px 25px rgba(255, 215, 0, 0.4) !important;
+          border-color: #ffd700 !important;
+        }
+
+        /* Responsive Footer */
+        footer {
+          padding: 60px 20px;
+          text-align: center;
+          background: #020617;
+          color: #94a3b8;
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+      `}</style>
     </main>
   );
 }

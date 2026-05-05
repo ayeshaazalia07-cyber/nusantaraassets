@@ -15,6 +15,8 @@ import {
   MapPin,
   CheckCircle,
   Image as ImageIcon,
+  FileArchive,
+  Download,
 } from "lucide-react";
 
 /* ─── Types ─── */
@@ -26,9 +28,9 @@ type ProductRow = {
   provinsi: string | null;
   kategori: string | null;
   harga: number | null;
-  gambar_url: string | null;
-  image_preview: string | null;
+  gambar_url: string | null; // gambar produk (thumbnail)
   is_free_trial: boolean;
+  file_path: string | null; // file produk (zip/gambar)
 };
 
 type FormState = {
@@ -37,8 +39,7 @@ type FormState = {
   provinsi: string;
   kategori: string;
   harga: string;
-  gambar_url: string;
-  image_preview: string;
+  gambar_url: string; // menyimpan URL lama saat edit
   is_free_trial: boolean;
 };
 
@@ -50,15 +51,22 @@ const card: React.CSSProperties = {
 };
 
 const KATEGORI_CONFIG: Record<string, { color: string; bg: string }> = {
-  "Jawa Tengah":    { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" },
-  "Jawa Barat":      { color: "#a78bfa", bg: "rgba(167,139,250,0.1)" },
-  "Jawa Timur":   { color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
-  "Banten":       { color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
-  "Bali":   { color: "#f87171", bg: "rgba(248,113,113,0.1)" },
-  "Lainnya":     { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
+  "Jawa Tengah": { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" },
+  "Jawa Barat": { color: "#a78bfa", bg: "rgba(167,139,250,0.1)" },
+  "Jawa Timur": { color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
+  Banten: { color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
+  Bali: { color: "#f87171", bg: "rgba(248,113,113,0.1)" },
+  Lainnya: { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
 };
 
-const KATEGORI_LIST = ["Jawa Tengah", "Jawa Barat", "Jawa Timur", "Banten", "Bali", "Lainnya"];
+const KATEGORI_LIST = [
+  "Jawa Tengah",
+  "Jawa Barat",
+  "Jawa Timur",
+  "Banten",
+  "Bali",
+  "Lainnya",
+];
 
 const EMPTY_FORM: FormState = {
   nama: "",
@@ -67,21 +75,40 @@ const EMPTY_FORM: FormState = {
   kategori: "",
   harga: "",
   gambar_url: "",
-  image_preview: "",
   is_free_trial: false,
 };
+
+// Bucket untuk gambar produk (thumbnail) → public
+const IMAGE_BUCKET = "image_preview";
+// Bucket untuk file produk (zip/png/jpg) → private
+const ASSETS_BUCKET = "game-assets";
 
 /* ─── Helpers ─── */
 const formatRupiah = (n: number | null) => {
   if (n === null || n === 0) return "Gratis";
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(n);
 };
 
 const formatDate = (s: string) =>
-  new Date(s).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+  new Date(s).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 
 const getKategoriCfg = (k: string | null) =>
   KATEGORI_CONFIG[k ?? ""] ?? { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" };
+
+const sanitizeFolderName = (name: string) =>
+  name
+    .trim()
+    .replace(/[^a-zA-Z0-9\-_ ]/g, "")
+    .replace(/\s+/g, "_")
+    .toLowerCase() || "produk";
 
 /* ════════════════════════════════════════════
    PAGE
@@ -90,23 +117,31 @@ export default function ProductPage() {
   const supabase = createSupabaseBrowser();
 
   /* table state */
-  const [products, setProducts]       = useState<ProductRow[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [search, setSearch]           = useState("");
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [kategoriFilter, setKategoriFilter] = useState("all");
 
   /* modal state */
-  const [modalOpen, setModalOpen]     = useState(false);
-  const [editTarget, setEditTarget]   = useState<ProductRow | null>(null);
-  const [form, setForm]               = useState<FormState>(EMPTY_FORM);
-  const [submitting, setSubmitting]   = useState(false);
-  const [formError, setFormError]     = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<ProductRow | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState(false);
   const namaRef = useRef<HTMLInputElement>(null);
 
   /* delete confirm state */
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
-  const [deleting, setDeleting]         = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  /* file states */
+  const [zipFile, setZipFile] = useState<File | null>(null); // file ZIP untuk produk
+  const [imageAssetFile, setImageAssetFile] = useState<File | null>(null); // file gambar non-ZIP untuk produk
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [imageFile, setImageFile] = useState<File | null>(null); // file gambar untuk thumbnail produk
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   /* ─── Fetch ─── */
   const fetchProducts = async () => {
@@ -119,20 +154,27 @@ export default function ProductPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchProducts(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    fetchProducts();
+  }, []);
 
   useEffect(() => {
     if (modalOpen) setTimeout(() => namaRef.current?.focus(), 80);
   }, [modalOpen]);
 
   useEffect(() => {
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") { closeModal(); setDeleteTarget(null); } };
+    const fn = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        closeModal();
+        setDeleteTarget(null);
+      }
+    };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
   }, []);
 
   /* ─── Filtered list ─── */
-  const filtered = products.filter(p => {
+  const filtered = products.filter((p) => {
     const q = search.toLowerCase();
     const matchSearch =
       !q ||
@@ -148,6 +190,9 @@ export default function ProductPage() {
   const openAdd = () => {
     setEditTarget(null);
     setForm(EMPTY_FORM);
+    setZipFile(null);
+    setImageAssetFile(null);
+    setImageFile(null);
     setFormError("");
     setFormSuccess(false);
     setModalOpen(true);
@@ -162,9 +207,11 @@ export default function ProductPage() {
       kategori: p.kategori ?? "",
       harga: p.harga !== null ? String(p.harga) : "",
       gambar_url: p.gambar_url ?? "",
-      image_preview: p.image_preview ?? "",
       is_free_trial: p.is_free_trial,
     });
+    setZipFile(null);
+    setImageAssetFile(null);
+    setImageFile(null);
     setFormError("");
     setFormSuccess(false);
     setModalOpen(true);
@@ -174,8 +221,92 @@ export default function ProductPage() {
     setModalOpen(false);
     setEditTarget(null);
     setForm(EMPTY_FORM);
+    setZipFile(null);
+    setImageAssetFile(null);
+    setImageFile(null);
     setFormError("");
     setFormSuccess(false);
+  };
+
+  /* ─── Storage Helpers ─── */
+  const deleteFileFromStorage = async (filePath: string) => {
+    if (!filePath) return;
+    try {
+      const { error } = await supabase.storage
+        .from(ASSETS_BUCKET)
+        .remove([filePath]);
+      if (error) console.error("Gagal hapus file:", error.message);
+    } catch {
+      // silent
+    }
+  };
+
+  const getFileNameFromPath = (path: string | null) => {
+    if (!path) return null;
+    const parts = path.split("/");
+    const raw = parts[parts.length - 1];
+    const underscoreIndex = raw.indexOf("_");
+    return underscoreIndex !== -1 ? raw.substring(underscoreIndex + 1) : raw;
+  };
+
+  const getSignedUrl = async (filePath: string) => {
+    const { data, error } = await supabase.storage
+      .from(ASSETS_BUCKET)
+      .createSignedUrl(filePath, 60);
+    if (error) {
+      console.error("Gagal buat signed URL:", error.message);
+      return null;
+    }
+    return data.signedUrl;
+  };
+
+  // Ekstrak path dari URL publik (bucket image_preview)
+  const extractPathFromUrl = (url: string, bucket: string): string | null => {
+    try {
+      const urlObj = new URL(url);
+      const pathSegments = urlObj.pathname.split("/");
+      const bucketIndex = pathSegments.indexOf(bucket);
+      if (bucketIndex !== -1) {
+        return pathSegments.slice(bucketIndex + 1).join("/");
+      }
+    } catch {
+      // bukan URL valid
+    }
+    return null;
+  };
+
+  // Upload gambar thumbnail ke bucket image_preview
+  const uploadImageAndGetUrl = async (
+    file: File,
+    productName: string,
+  ): Promise<string> => {
+    const folder = sanitizeFolderName(productName);
+    const ext = file.name.split(".").pop() || "jpg";
+    const uniqueName = `${crypto.randomUUID()}.${ext}`;
+    const filePath = `${folder}/${uniqueName}`;
+
+    const { error } = await supabase.storage
+      .from(IMAGE_BUCKET)
+      .upload(filePath, file, {
+        contentType: file.type,
+        upsert: true,
+      });
+
+    if (error) throw new Error("Gagal upload gambar: " + error.message);
+
+    const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
+  // Hapus gambar dari storage (jika path didapat dari URL)
+  const deleteImageByUrl = async (url: string) => {
+    const path = extractPathFromUrl(url, IMAGE_BUCKET);
+    if (!path) return;
+    try {
+      await supabase.storage.from(IMAGE_BUCKET).remove([path]);
+    } catch (e) {
+      console.warn("Gagal hapus gambar lama (mungkin sudah tidak ada):", e);
+    }
   };
 
   /* ─── Submit (Add / Edit) ─── */
@@ -183,30 +314,98 @@ export default function ProductPage() {
     setFormError("");
     if (!form.nama.trim()) return setFormError("Nama produk wajib diisi.");
 
+    // Validasi file produk (ZIP atau gambar)
+    const assetFile = zipFile || imageAssetFile;
+    if (assetFile) {
+      const ext = assetFile.name.split(".").pop()?.toLowerCase();
+      if (ext === "zip") {
+        if (assetFile.size > 50 * 1024 * 1024)
+          return setFormError("Ukuran file ZIP maksimal 50MB.");
+      } else {
+        const allowedImages = ["png", "jpg", "jpeg", "webp"];
+        if (!allowedImages.includes(ext || ""))
+          return setFormError(
+            "Hanya file .zip, .png, .jpg, .jpeg, .webp yang diperbolehkan.",
+          );
+        if (assetFile.size > 5 * 1024 * 1024)
+          return setFormError("Ukuran gambar maksimal 5MB.");
+      }
+    }
+
+    // Validasi gambar thumbnail
+    if (imageFile) {
+      const allowedTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+      ];
+      if (!allowedTypes.includes(imageFile.type))
+        return setFormError("Gambar harus JPG, PNG, WebP, atau GIF.");
+      if (imageFile.size > 5 * 1024 * 1024)
+        return setFormError("Ukuran gambar maksimal 5MB.");
+    }
+
     setSubmitting(true);
     try {
+      let filePath = editTarget?.file_path ?? null;
+
+      // Upload file produk (ke game-assets)
+      if (assetFile) {
+        const sanitized = sanitizeFolderName(form.nama);
+        const unique = `${crypto.randomUUID()}_${assetFile.name}`;
+        const uploadPath = `${sanitized}/${unique}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from(ASSETS_BUCKET)
+          .upload(uploadPath, assetFile, {
+            contentType: assetFile.type,
+            upsert: true,
+          });
+
+        if (uploadError)
+          throw new Error("Gagal upload file produk: " + uploadError.message);
+
+        if (editTarget?.file_path && editTarget.file_path !== uploadPath) {
+          await deleteFileFromStorage(editTarget.file_path);
+        }
+
+        filePath = uploadPath;
+      }
+
+      // Upload gambar thumbnail (ke image_preview)
+      let gambarUrl = form.gambar_url;
+      if (imageFile) {
+        if (editTarget?.gambar_url)
+          await deleteImageByUrl(editTarget.gambar_url);
+        gambarUrl = await uploadImageAndGetUrl(imageFile, form.nama);
+      }
+
       const payload = {
         nama: form.nama.trim(),
         deskripsi: form.deskripsi.trim() || null,
         provinsi: form.provinsi.trim() || null,
         kategori: form.kategori || null,
         harga: form.harga ? parseInt(form.harga.replace(/\D/g, ""), 10) : null,
-        gambar_url: form.gambar_url.trim() || null,
-        image_preview: form.image_preview.trim() || null,
+        gambar_url: gambarUrl || null,
         is_free_trial: form.is_free_trial,
+        file_path: filePath,
       };
 
       if (editTarget) {
-        const { error } = await supabase.from("product").update(payload).eq("id", editTarget.id);
-        if (error) throw new Error(error.message);
+        const { error } = await supabase
+          .from("product")
+          .update(payload)
+          .eq("id", editTarget.id);
+        if (error) throw new Error("Gagal update produk: " + error.message);
       } else {
         const { error } = await supabase.from("product").insert(payload);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error("Gagal menambah produk: " + error.message);
       }
 
       setFormSuccess(true);
       await fetchProducts();
-      setTimeout(closeModal, 1400);
+      setTimeout(() => closeModal(), 1500);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Terjadi kesalahan.");
     } finally {
@@ -219,12 +418,19 @@ export default function ProductPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const { error } = await supabase.from("product").delete().eq("id", deleteTarget.id);
+      if (deleteTarget.file_path)
+        await deleteFileFromStorage(deleteTarget.file_path);
+      if (deleteTarget.gambar_url)
+        await deleteImageByUrl(deleteTarget.gambar_url);
+      const { error } = await supabase
+        .from("product")
+        .delete()
+        .eq("id", deleteTarget.id);
       if (error) throw new Error(error.message);
       await fetchProducts();
       setDeleteTarget(null);
     } catch {
-      // silent — optionally show toast
+      // silent
     } finally {
       setDeleting(false);
     }
@@ -384,6 +590,7 @@ export default function ProductPage() {
         }
         .action-btn.edit:hover  { color: #ffd700; border-color: rgba(255,215,0,0.3); background: rgba(255,215,0,0.07); }
         .action-btn.del:hover   { color: #f87171; border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.07); }
+        .action-btn.download:hover { color: #60a5fa; border-color: rgba(96,165,250,0.3); background: rgba(96,165,250,0.07); }
 
         .skeleton-bar {
           background: rgba(255,255,255,0.06); border-radius: 6px;
@@ -422,93 +629,177 @@ export default function ProductPage() {
         }
       `}</style>
 
-      {/* ─────────────────────────────────────
-          ADD / EDIT MODAL
-      ───────────────────────────────────── */}
+      {/* ADD / EDIT MODAL */}
       {modalOpen && (
         <div
-          onClick={e => { if (e.target === e.currentTarget) closeModal(); }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
           style={{
-            position: "fixed", inset: 0, zIndex: 100,
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
             background: "rgba(2,6,23,0.78)",
             backdropFilter: "blur(7px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             padding: "20px",
             animation: "fadeIn 0.15s ease",
             overflowY: "auto",
           }}
         >
-          <div style={{
-            width: "100%", maxWidth: "560px",
-            background: "rgba(15,23,42,0.98)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "24px",
-            padding: "32px",
-            boxShadow: "0 30px 60px rgba(0,0,0,0.6)",
-            position: "relative",
-            animation: "modalIn 0.25s cubic-bezier(0.16,1,0.3,1)",
-            fontFamily: "'Plus Jakarta Sans', Poppins, sans-serif",
-            margin: "auto",
-          }}>
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "560px",
+              background: "rgba(15,23,42,0.98)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "24px",
+              padding: "32px",
+              boxShadow: "0 30px 60px rgba(0,0,0,0.6)",
+              position: "relative",
+              animation: "modalIn 0.25s cubic-bezier(0.16,1,0.3,1)",
+              fontFamily: "'Plus Jakarta Sans', Poppins, sans-serif",
+              margin: "auto",
+            }}
+          >
             {/* Gold shimmer */}
-            <div style={{
-              position: "absolute", top: 0, left: "20%", right: "20%", height: "1px",
-              background: "linear-gradient(90deg, transparent, rgba(255,215,0,0.4), transparent)",
-              borderRadius: "99px",
-            }} />
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: "20%",
+                right: "20%",
+                height: "1px",
+                background:
+                  "linear-gradient(90deg, transparent, rgba(255,215,0,0.4), transparent)",
+                borderRadius: "99px",
+              }}
+            />
 
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{
-                  width: "40px", height: "40px", borderRadius: "12px",
-                  background: "rgba(255,215,0,0.08)", border: "1px solid rgba(255,215,0,0.15)",
-                  display: "flex", alignItems: "center", justifyContent: "center", color: "#ffd700",
-                }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "28px",
+              }}
+            >
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "12px" }}
+              >
+                <div
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "12px",
+                    background: "rgba(255,215,0,0.08)",
+                    border: "1px solid rgba(255,215,0,0.15)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#ffd700",
+                  }}
+                >
                   {editTarget ? <Pencil size={17} /> : <Plus size={18} />}
                 </div>
                 <div>
-                  <h2 style={{ fontSize: "17px", fontWeight: 800, color: "#fff", margin: 0 }}>
+                  <h2
+                    style={{
+                      fontSize: "17px",
+                      fontWeight: 800,
+                      color: "#fff",
+                      margin: 0,
+                    }}
+                  >
                     {editTarget ? "Edit Produk" : "Tambah Produk"}
                   </h2>
-                  <p style={{ fontSize: "12px", color: "#475569", margin: "2px 0 0" }}>
-                    {editTarget ? `ID #${editTarget.id}` : "Daftarkan produk baru ke sistem"}
+                  <p
+                    style={{
+                      fontSize: "12px",
+                      color: "#475569",
+                      margin: "2px 0 0",
+                    }}
+                  >
+                    {editTarget
+                      ? `ID #${editTarget.id}`
+                      : "Daftarkan produk baru ke sistem"}
                   </p>
                 </div>
               </div>
               <button
                 onClick={closeModal}
                 style={{
-                  width: "32px", height: "32px", borderRadius: "10px",
-                  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  cursor: "pointer", color: "#64748b", transition: "color 0.2s, background 0.2s",
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "10px",
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  color: "#64748b",
+                  transition: "color 0.2s, background 0.2s",
                 }}
-                onMouseEnter={e => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.09)"; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "#64748b"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#fff";
+                  e.currentTarget.style.background = "rgba(255,255,255,0.09)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "#64748b";
+                  e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                }}
               >
                 <X size={15} />
               </button>
             </div>
 
-            {/* Success */}
             {formSuccess ? (
-              <div style={{ padding: "28px 0", textAlign: "center", animation: "fadeSlideUp 0.3s ease" }}>
-                <div style={{
-                  width: "56px", height: "56px", borderRadius: "50%",
-                  background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.25)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  margin: "0 auto 16px", fontSize: "22px", color: "#4ade80",
-                }}>
+              <div
+                style={{
+                  padding: "28px 0",
+                  textAlign: "center",
+                  animation: "fadeSlideUp 0.3s ease",
+                }}
+              >
+                <div
+                  style={{
+                    width: "56px",
+                    height: "56px",
+                    borderRadius: "50%",
+                    background: "rgba(74,222,128,0.1)",
+                    border: "1px solid rgba(74,222,128,0.25)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "0 auto 16px",
+                    fontSize: "22px",
+                    color: "#4ade80",
+                  }}
+                >
                   <CheckCircle size={26} />
                 </div>
-                <p style={{ color: "#4ade80", fontWeight: 700, fontSize: "15px", margin: 0 }}>
+                <p
+                  style={{
+                    color: "#4ade80",
+                    fontWeight: 700,
+                    fontSize: "15px",
+                    margin: 0,
+                  }}
+                >
                   Produk berhasil {editTarget ? "diperbarui" : "ditambahkan"}!
                 </p>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px",
+                }}
+              >
                 {/* Nama */}
                 <div>
                   <label className="modal-label">
@@ -519,7 +810,9 @@ export default function ProductPage() {
                     className="modal-input"
                     placeholder="Contoh: Tanah Kavling Serpong"
                     value={form.nama}
-                    onChange={e => setForm(f => ({ ...f, nama: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, nama: e.target.value }))
+                    }
                   />
                 </div>
 
@@ -530,19 +823,29 @@ export default function ProductPage() {
                     className="modal-textarea"
                     placeholder="Deskripsi singkat produk..."
                     value={form.deskripsi}
-                    onChange={e => setForm(f => ({ ...f, deskripsi: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, deskripsi: e.target.value }))
+                    }
                   />
                 </div>
 
-                {/* Row: Provinsi + Kategori */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                {/* Provinsi + Kategori */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                  }}
+                >
                   <div>
                     <label className="modal-label">Provinsi</label>
                     <input
                       className="modal-input"
                       placeholder="Contoh: Banten"
                       value={form.provinsi}
-                      onChange={e => setForm(f => ({ ...f, provinsi: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, provinsi: e.target.value }))
+                      }
                     />
                   </div>
                   <div>
@@ -551,14 +854,28 @@ export default function ProductPage() {
                       <select
                         className="modal-select"
                         value={form.kategori}
-                        onChange={e => setForm(f => ({ ...f, kategori: e.target.value }))}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, kategori: e.target.value }))
+                        }
                       >
                         <option value="">Pilih kategori</option>
-                        {KATEGORI_LIST.map(k => (
-                          <option key={k} value={k}>{k}</option>
+                        {KATEGORI_LIST.map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
                         ))}
                       </select>
-                      <Tag size={13} color="#475569" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                      <Tag
+                        size={13}
+                        color="#475569"
+                        style={{
+                          position: "absolute",
+                          right: 14,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          pointerEvents: "none",
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -567,172 +884,584 @@ export default function ProductPage() {
                 <div>
                   <label className="modal-label">
                     Harga{" "}
-                    <span style={{ color: "#475569", fontWeight: 400 }}>(kosongkan jika gratis)</span>
+                    <span style={{ color: "#475569", fontWeight: 400 }}>
+                      (kosongkan jika gratis)
+                    </span>
                   </label>
                   <div style={{ position: "relative" }}>
-                    <span style={{
-                      position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)",
-                      color: "#475569", fontSize: "13px", fontWeight: 600, pointerEvents: "none",
-                    }}>Rp</span>
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: "14px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "#475569",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      Rp
+                    </span>
                     <input
                       className="modal-input"
                       placeholder="0"
                       value={form.harga}
-                      onChange={e => setForm(f => ({ ...f, harga: e.target.value.replace(/\D/g, "") }))}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          harga: e.target.value.replace(/\D/g, ""),
+                        }))
+                      }
                       style={{ paddingLeft: "36px" }}
                     />
                   </div>
                 </div>
 
-                {/* Row: Gambar URL + Preview URL */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                  <div>
-                    <label className="modal-label">URL Gambar</label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        className="modal-input"
-                        placeholder="https://..."
-                        value={form.gambar_url}
-                        onChange={e => setForm(f => ({ ...f, gambar_url: e.target.value }))}
-                        style={{ paddingRight: "36px" }}
-                      />
-                      <ImageIcon size={13} color="#475569" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-                    </div>
+                {/* Upload Gambar (Thumbnail) */}
+                <div>
+                  <label className="modal-label">Gambar Produk</label>
+                  {!imageFile &&
+                    (editTarget?.gambar_url || form.gambar_url) && (
+                      <div
+                        style={{
+                          marginBottom: "8px",
+                          borderRadius: "10px",
+                          overflow: "hidden",
+                          width: "80px",
+                          height: "80px",
+                          border: "1px solid rgba(255,215,0,0.2)",
+                        }}
+                      >
+                        <img
+                          src={editTarget?.gambar_url || form.gambar_url}
+                          alt="Preview"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              "none";
+                          }}
+                        />
+                      </div>
+                    )}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    ref={imageInputRef}
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const allowed = [
+                          "image/jpeg",
+                          "image/png",
+                          "image/webp",
+                          "image/gif",
+                        ];
+                        if (!allowed.includes(file.type)) {
+                          setFormError(
+                            "Gambar harus JPG, PNG, WebP, atau GIF.",
+                          );
+                          return;
+                        }
+                        if (file.size > 5 * 1024 * 1024) {
+                          setFormError("Ukuran gambar maksimal 5MB.");
+                          return;
+                        }
+                        setImageFile(file);
+                        setFormError("");
+                      }
+                    }}
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems: "center",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="modal-input"
+                      style={{
+                        textAlign: "left",
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        whiteSpace: "nowrap",
+                        textOverflow: "ellipsis",
+                        flex: 1,
+                      }}
+                      onClick={() => imageInputRef.current?.click()}
+                    >
+                      {imageFile
+                        ? imageFile.name
+                        : editTarget?.gambar_url
+                          ? "Ganti gambar (klik di sini)"
+                          : "Klik untuk upload gambar"}
+                    </button>
+                    {(imageFile || editTarget?.gambar_url) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageFile(null);
+                          if (editTarget)
+                            setForm((f) => ({ ...f, gambar_url: "" }));
+                        }}
+                        style={{
+                          height: "44px",
+                          padding: "0 12px",
+                          background: "rgba(248,113,113,0.08)",
+                          border: "1px solid rgba(248,113,113,0.2)",
+                          borderRadius: "12px",
+                          color: "#f87171",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <Trash2 size={14} /> Hapus
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <label className="modal-label">URL Preview</label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        className="modal-input"
-                        placeholder="https://..."
-                        value={form.image_preview}
-                        onChange={e => setForm(f => ({ ...f, image_preview: e.target.value }))}
-                        style={{ paddingRight: "36px" }}
-                      />
-                      <ImageIcon size={13} color="#475569" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                  {imageFile && (
+                    <div
+                      style={{
+                        marginTop: "6px",
+                        fontSize: "11px",
+                        color: "#64748b",
+                      }}
+                    >
+                      <ImageIcon size={12} style={{ marginRight: "4px" }} />
+                      {imageFile.name} ({(imageFile.size / 1024).toFixed(1)} KB)
                     </div>
+                  )}
+                </div>
+
+                {/* Upload File Produk (ZIP / Gambar) */}
+                <div>
+                  <label className="modal-label">
+                    File Produk (zip / png / jpg)
+                  </label>
+                  {editTarget?.file_path && !zipFile && !imageAssetFile && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "8px",
+                        padding: "6px 12px",
+                        background: "rgba(255,215,0,0.05)",
+                        border: "1px solid rgba(255,215,0,0.15)",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        color: "#ffd700",
+                      }}
+                    >
+                      <FileArchive size={14} />
+                      <span style={{ flex: 1 }}>
+                        {getFileNameFromPath(editTarget.file_path)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const url = await getSignedUrl(editTarget.file_path!);
+                          if (url) window.open(url, "_blank");
+                        }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#60a5fa",
+                          cursor: "pointer",
+                          padding: "2px",
+                        }}
+                        title="Download file"
+                      >
+                        <Download size={14} />
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept=".zip,.png,.jpg,.jpeg,.webp"
+                    ref={fileInputRef}
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      const ext = file.name.split(".").pop()?.toLowerCase();
+                      const isZip = ext === "zip";
+                      const isImage = ["png", "jpg", "jpeg", "webp"].includes(
+                        ext || "",
+                      );
+
+                      if (!isZip && !isImage) {
+                        setFormError(
+                          "Hanya file .zip, .png, .jpg, .jpeg, atau .webp yang diperbolehkan.",
+                        );
+                        return;
+                      }
+                      if (isZip && file.size > 50 * 1024 * 1024) {
+                        setFormError("Ukuran ZIP maksimal 50MB.");
+                        return;
+                      }
+                      if (isImage && file.size > 5 * 1024 * 1024) {
+                        setFormError("Ukuran gambar maksimal 5MB.");
+                        return;
+                      }
+
+                      setZipFile(isZip ? file : null);
+                      setImageAssetFile(isImage ? file : null);
+                      setFormError("");
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      type="button"
+                      className="modal-input"
+                      style={{
+                        textAlign: "left",
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        whiteSpace: "nowrap",
+                        textOverflow: "ellipsis",
+                        flex: 1,
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {zipFile || imageAssetFile
+                        ? zipFile?.name || imageAssetFile?.name
+                        : editTarget?.file_path
+                          ? "Ganti file (klik di sini)"
+                          : "Klik untuk pilih file (.zip / .png / .jpg)"}
+                    </button>
+                    {(zipFile || imageAssetFile || editTarget?.file_path) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setZipFile(null);
+                          setImageAssetFile(null);
+                        }}
+                        style={{
+                          height: "44px",
+                          padding: "0 12px",
+                          background: "rgba(248,113,113,0.08)",
+                          border: "1px solid rgba(248,113,113,0.2)",
+                          borderRadius: "12px",
+                          color: "#f87171",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <Trash2 size={14} />
+                        Hapus
+                      </button>
+                    )}
                   </div>
+
+                  {imageAssetFile && (
+                    <div
+                      style={{
+                        marginTop: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <img
+                        src={URL.createObjectURL(imageAssetFile)}
+                        alt="Preview asset"
+                        style={{
+                          width: "40px",
+                          height: "40px",
+                          borderRadius: "6px",
+                          objectFit: "cover",
+                          border: "1px solid rgba(255,215,0,0.2)",
+                        }}
+                      />
+                      <div>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: "11px",
+                            color: "#e2e8f0",
+                          }}
+                        >
+                          {imageAssetFile.name}
+                        </p>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: "10px",
+                            color: "#64748b",
+                          }}
+                        >
+                          {(imageAssetFile.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {zipFile && (
+                    <div
+                      style={{
+                        marginTop: "6px",
+                        fontSize: "11px",
+                        color: "#64748b",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <FileArchive size={12} color="#ffd700" />
+                      {zipFile.name} (
+                      {(zipFile.size / (1024 * 1024)).toFixed(2)} MB)
+                    </div>
+                  )}
                 </div>
 
                 {/* Free Trial toggle */}
-                <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: "14px", padding: "14px 16px",
-                }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: "14px",
+                    padding: "14px 16px",
+                  }}
+                >
                   <div>
-                    <p style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: "#e2e8f0" }}>Free Trial</p>
-                    <p style={{ margin: "3px 0 0", fontSize: "11px", color: "#475569" }}>Produk dapat dicoba gratis</p>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        color: "#e2e8f0",
+                      }}
+                    >
+                      Free Trial
+                    </p>
+                    <p
+                      style={{
+                        margin: "3px 0 0",
+                        fontSize: "11px",
+                        color: "#475569",
+                      }}
+                    >
+                      Produk dapat dicoba gratis
+                    </p>
                   </div>
                   <button
                     type="button"
                     className="toggle-track"
-                    onClick={() => setForm(f => ({ ...f, is_free_trial: !f.is_free_trial }))}
-                    style={{ background: form.is_free_trial ? "#4ade80" : "rgba(255,255,255,0.1)" }}
+                    onClick={() =>
+                      setForm((f) => ({
+                        ...f,
+                        is_free_trial: !f.is_free_trial,
+                      }))
+                    }
+                    style={{
+                      background: form.is_free_trial
+                        ? "#4ade80"
+                        : "rgba(255,255,255,0.1)",
+                    }}
                   >
-                    <div className="toggle-thumb" style={{ left: form.is_free_trial ? "21px" : "3px" }} />
+                    <div
+                      className="toggle-thumb"
+                      style={{ left: form.is_free_trial ? "21px" : "3px" }}
+                    />
                   </button>
                 </div>
 
-                {/* Error */}
                 {formError && (
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-                    color: "#f87171", fontSize: "12px", padding: "10px 14px", borderRadius: "10px",
-                    animation: "shake 0.3s ease",
-                  }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      background: "rgba(239,68,68,0.08)",
+                      border: "1px solid rgba(239,68,68,0.2)",
+                      color: "#f87171",
+                      fontSize: "12px",
+                      padding: "10px 14px",
+                      borderRadius: "10px",
+                      animation: "shake 0.3s ease",
+                    }}
+                  >
                     ⚠ {formError}
                   </div>
                 )}
 
-                {/* Submit */}
                 <button
                   onClick={handleSubmit}
                   disabled={submitting}
                   style={{
-                    marginTop: "4px", width: "100%", height: "48px",
+                    marginTop: "4px",
+                    width: "100%",
+                    height: "48px",
                     background: submitting ? "rgba(255,215,0,0.5)" : "#ffd700",
-                    color: "#0f172a", border: "none", borderRadius: "14px",
-                    fontSize: "14px", fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer",
-                    fontFamily: "inherit", display: "flex", alignItems: "center",
-                    justifyContent: "center", gap: "8px", transition: "transform 0.2s, box-shadow 0.2s",
+                    color: "#0f172a",
+                    border: "none",
+                    borderRadius: "14px",
+                    fontSize: "14px",
+                    fontWeight: 800,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    transition: "transform 0.2s, box-shadow 0.2s",
                     boxShadow: "0 4px 14px rgba(255,215,0,0.3)",
                   }}
-                  onMouseEnter={e => { if (!submitting) e.currentTarget.style.transform = "translateY(-1px)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}
+                  onMouseEnter={(e) => {
+                    if (!submitting)
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
                 >
                   {submitting ? (
                     <>
-                      <span style={{
-                        width: "16px", height: "16px",
-                        border: "2px solid rgba(15,23,42,0.25)", borderTopColor: "#0f172a",
-                        borderRadius: "50%", animation: "spinAnim 0.8s linear infinite", display: "inline-block",
-                      }} />
+                      <span
+                        style={{
+                          width: "16px",
+                          height: "16px",
+                          border: "2px solid rgba(15,23,42,0.25)",
+                          borderTopColor: "#0f172a",
+                          borderRadius: "50%",
+                          animation: "spinAnim 0.8s linear infinite",
+                          display: "inline-block",
+                        }}
+                      />{" "}
                       Menyimpan...
                     </>
                   ) : editTarget ? (
-                    <><Pencil size={15} /> Simpan Perubahan</>
+                    <>
+                      <Pencil size={15} /> Simpan Perubahan
+                    </>
                   ) : (
-                    <><Plus size={16} /> Tambah Produk</>
+                    <>
+                      <Plus size={16} /> Tambah Produk
+                    </>
                   )}
                 </button>
-
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* ─────────────────────────────────────
-          DELETE CONFIRM MODAL
-      ───────────────────────────────────── */}
+      {/* DELETE CONFIRM MODAL */}
       {deleteTarget && (
         <div
-          onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDeleteTarget(null);
+          }}
           style={{
-            position: "fixed", inset: 0, zIndex: 100,
+            position: "fixed",
+            inset: 0,
+            zIndex: 100,
             background: "rgba(2,6,23,0.78)",
             backdropFilter: "blur(7px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             padding: "20px",
             animation: "fadeIn 0.15s ease",
           }}
         >
-          <div style={{
-            width: "100%", maxWidth: "400px",
-            background: "rgba(15,23,42,0.98)",
-            border: "1px solid rgba(248,113,113,0.2)",
-            borderRadius: "24px", padding: "32px",
-            boxShadow: "0 30px 60px rgba(0,0,0,0.6)",
-            animation: "modalIn 0.25s cubic-bezier(0.16,1,0.3,1)",
-            fontFamily: "'Plus Jakarta Sans', Poppins, sans-serif",
-          }}>
-            {/* Red shimmer */}
-            <div style={{
-              width: "100%", height: "1px", marginBottom: "24px",
-              background: "linear-gradient(90deg, transparent, rgba(248,113,113,0.4), transparent)",
-            }} />
-
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "400px",
+              background: "rgba(15,23,42,0.98)",
+              border: "1px solid rgba(248,113,113,0.2)",
+              borderRadius: "24px",
+              padding: "32px",
+              boxShadow: "0 30px 60px rgba(0,0,0,0.6)",
+              animation: "modalIn 0.25s cubic-bezier(0.16,1,0.3,1)",
+              fontFamily: "'Plus Jakarta Sans', Poppins, sans-serif",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "1px",
+                marginBottom: "24px",
+                background:
+                  "linear-gradient(90deg, transparent, rgba(248,113,113,0.4), transparent)",
+              }}
+            />
             <div style={{ textAlign: "center" }}>
-              <div style={{
-                width: "52px", height: "52px", borderRadius: "50%",
-                background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                margin: "0 auto 16px", color: "#f87171",
-              }}>
+              <div
+                style={{
+                  width: "52px",
+                  height: "52px",
+                  borderRadius: "50%",
+                  background: "rgba(248,113,113,0.1)",
+                  border: "1px solid rgba(248,113,113,0.25)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 16px",
+                  color: "#f87171",
+                }}
+              >
                 <Trash2 size={22} />
               </div>
-              <h2 style={{ fontSize: "17px", fontWeight: 800, color: "#fff", margin: "0 0 8px" }}>
+              <h2
+                style={{
+                  fontSize: "17px",
+                  fontWeight: 800,
+                  color: "#fff",
+                  margin: "0 0 8px",
+                }}
+              >
                 Hapus Produk?
               </h2>
-              <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 4px" }}>
+              <p
+                style={{
+                  fontSize: "13px",
+                  color: "#64748b",
+                  margin: "0 0 4px",
+                }}
+              >
                 Kamu yakin mau hapus:
               </p>
-              <p style={{ fontSize: "14px", fontWeight: 700, color: "#e2e8f0", margin: "0 0 24px" }}>
+              <p
+                style={{
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  color: "#e2e8f0",
+                  margin: "0 0 24px",
+                }}
+              >
                 &ldquo;{deleteTarget.nama}&rdquo;
               </p>
-              <p style={{ fontSize: "11px", color: "#475569", margin: "0 0 28px" }}>
+              <p
+                style={{
+                  fontSize: "11px",
+                  color: "#475569",
+                  margin: "0 0 28px",
+                }}
+              >
                 Tindakan ini tidak bisa dibatalkan.
               </p>
 
@@ -740,13 +1469,25 @@ export default function ProductPage() {
                 <button
                   onClick={() => setDeleteTarget(null)}
                   style={{
-                    flex: 1, height: "44px", borderRadius: "12px", cursor: "pointer",
-                    background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#94a3b8", fontSize: "13px", fontWeight: 700, fontFamily: "inherit",
-                    transition: "all 0.2s",
+                    flex: 1,
+                    height: "44px",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "#94a3b8",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    fontFamily: "inherit",
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.09)"; e.currentTarget.style.color = "#e2e8f0"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "#94a3b8"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.09)";
+                    e.currentTarget.style.color = "#e2e8f0";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                    e.currentTarget.style.color = "#94a3b8";
+                  }}
                 >
                   Batal
                 </button>
@@ -754,22 +1495,38 @@ export default function ProductPage() {
                   onClick={handleDelete}
                   disabled={deleting}
                   style={{
-                    flex: 1, height: "44px", borderRadius: "12px", cursor: deleting ? "not-allowed" : "pointer",
+                    flex: 1,
+                    height: "44px",
+                    borderRadius: "12px",
+                    cursor: deleting ? "not-allowed" : "pointer",
                     background: deleting ? "rgba(239,68,68,0.4)" : "#ef4444",
-                    border: "none", color: "#fff",
-                    fontSize: "13px", fontWeight: 700, fontFamily: "inherit",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "7px",
-                    transition: "all 0.2s",
+                    border: "none",
+                    color: "#fff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "7px",
                   }}
                 >
                   {deleting ? (
-                    <span style={{
-                      width: "14px", height: "14px",
-                      border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff",
-                      borderRadius: "50%", animation: "spinAnim 0.8s linear infinite", display: "inline-block",
-                    }} />
+                    <span
+                      style={{
+                        width: "14px",
+                        height: "14px",
+                        border: "2px solid rgba(255,255,255,0.3)",
+                        borderTopColor: "#fff",
+                        borderRadius: "50%",
+                        animation: "spinAnim 0.8s linear infinite",
+                        display: "inline-block",
+                      }}
+                    />
                   ) : (
-                    <><Trash2 size={14} /> Hapus</>
+                    <>
+                      <Trash2 size={14} /> Hapus
+                    </>
                   )}
                 </button>
               </div>
@@ -778,23 +1535,41 @@ export default function ProductPage() {
         </div>
       )}
 
-      {/* ─────────────────────────────────────
-          MAIN PAGE
-      ───────────────────────────────────── */}
+      {/* MAIN PAGE */}
       <div className="page-wrapper">
-
-        {/* ── Header ── */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}
+        >
           <div>
-            <h1 style={{ fontSize: "28px", fontWeight: 800, color: "#fff", letterSpacing: "-0.5px", margin: 0 }}>
+            <h1
+              style={{
+                fontSize: "28px",
+                fontWeight: 800,
+                color: "#fff",
+                letterSpacing: "-0.5px",
+                margin: 0,
+              }}
+            >
               Manajemen Produk
             </h1>
-            <p style={{ color: "#64748b", fontSize: "14px", margin: "6px 0 0" }}>
+            <p
+              style={{ color: "#64748b", fontSize: "14px", margin: "6px 0 0" }}
+            >
               Kelola semua produk yang tersedia di platform.
             </p>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button className="refresh-btn" onClick={fetchProducts} disabled={loading}>
+            <button
+              className="refresh-btn"
+              onClick={fetchProducts}
+              disabled={loading}
+            >
               <RefreshCw size={13} className={loading ? "spinning" : ""} />
               Refresh
             </button>
@@ -805,40 +1580,101 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* ── Stats row ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "14px" }}>
+        {/* Stats */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+            gap: "14px",
+          }}
+        >
           {[
-            { label: "Total Produk",   value: products.length,                           color: "#ffd700" },
-            { label: "Free Trial",     value: products.filter(p => p.is_free_trial).length, color: "#4ade80" },
-            { label: "Berbayar",       value: products.filter(p => !p.is_free_trial && p.harga).length, color: "#60a5fa" },
-            { label: "Tanpa Harga",    value: products.filter(p => !p.harga).length,      color: "#a78bfa" },
-          ].map(s => (
-            <div key={s.label} style={{
-              ...card, padding: "18px 20px",
-              display: "flex", flexDirection: "column", gap: "6px",
-            }}>
-              <p style={{ margin: 0, fontSize: "11px", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "1px" }}>
+            { label: "Total Produk", value: products.length, color: "#ffd700" },
+            {
+              label: "Free Trial",
+              value: products.filter((p) => p.is_free_trial).length,
+              color: "#4ade80",
+            },
+            {
+              label: "Berbayar",
+              value: products.filter((p) => !p.is_free_trial && p.harga).length,
+              color: "#60a5fa",
+            },
+            {
+              label: "Tanpa Harga",
+              value: products.filter((p) => !p.harga).length,
+              color: "#a78bfa",
+            },
+          ].map((s) => (
+            <div
+              key={s.label}
+              style={{
+                ...card,
+                padding: "18px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#475569",
+                  textTransform: "uppercase",
+                  letterSpacing: "1px",
+                }}
+              >
                 {s.label}
               </p>
-              <p style={{ margin: 0, fontSize: "26px", fontWeight: 800, color: s.color, lineHeight: 1 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "26px",
+                  fontWeight: 800,
+                  color: s.color,
+                  lineHeight: 1,
+                }}
+              >
                 {loading ? "—" : s.value}
               </p>
             </div>
           ))}
         </div>
 
-        {/* ── Table card ── */}
+        {/* Table */}
         <div style={{ ...card, padding: 0, overflow: "hidden" }}>
-
-          {/* Bar: title + controls */}
           <div className="prod-header-bar">
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div style={{ width: "4px", height: "24px", background: "#ffd700", borderRadius: "4px" }} />
-              <h3 style={{ color: "#fff", fontWeight: 700, fontSize: "17px", margin: 0 }}>Daftar Produk</h3>
-              <span style={{
-                background: "rgba(255,215,0,0.1)", color: "#ffd700",
-                fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "8px",
-              }}>
+              <div
+                style={{
+                  width: "4px",
+                  height: "24px",
+                  background: "#ffd700",
+                  borderRadius: "4px",
+                }}
+              />
+              <h3
+                style={{
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: "17px",
+                  margin: 0,
+                }}
+              >
+                Daftar Produk
+              </h3>
+              <span
+                style={{
+                  background: "rgba(255,215,0,0.1)",
+                  color: "#ffd700",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  padding: "3px 10px",
+                  borderRadius: "8px",
+                }}
+              >
                 {loading ? "…" : filtered.length}
               </span>
             </div>
@@ -850,13 +1686,16 @@ export default function ProductPage() {
                   className="prod-search-input"
                   placeholder="Cari nama / provinsi / kategori..."
                   value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <button className={`filter-pill${kategoriFilter === "all" ? " active" : ""}`} onClick={() => setKategoriFilter("all")}>
+              <button
+                className={`filter-pill${kategoriFilter === "all" ? " active" : ""}`}
+                onClick={() => setKategoriFilter("all")}
+              >
                 Semua
               </button>
-              {KATEGORI_LIST.map(k => (
+              {KATEGORI_LIST.map((k) => (
                 <button
                   key={k}
                   className={`filter-pill${kategoriFilter === k ? " active" : ""}`}
@@ -868,60 +1707,152 @@ export default function ProductPage() {
             </div>
           </div>
 
-          {/* Table */}
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <tr
+                  style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+                >
                   <th className="prod-th">Produk</th>
                   <th className="prod-th col-provinsi">Provinsi</th>
                   <th className="prod-th">Kategori</th>
                   <th className="prod-th col-harga">Harga</th>
                   <th className="prod-th col-deskripsi">Deskripsi</th>
                   <th className="prod-th col-date">Dibuat</th>
-                  <th className="prod-th" style={{ textAlign: "center" }}>Aksi</th>
+                  <th className="prod-th" style={{ textAlign: "center" }}>
+                    Aksi
+                  </th>
                 </tr>
               </thead>
               <tbody>
-
-                {/* Skeleton */}
-                {loading && Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <td className="prod-td">
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <div className="skeleton-bar" style={{ width: 38, height: 38, minWidth: 38, borderRadius: 10 }} />
-                        <div>
-                          <div className="skeleton-bar" style={{ width: 140, height: 13, marginBottom: 6 }} />
-                          <div className="skeleton-bar" style={{ width: 80, height: 11 }} />
+                {loading &&
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr
+                      key={i}
+                      style={{
+                        borderBottom: "1px solid rgba(255,255,255,0.04)",
+                      }}
+                    >
+                      <td className="prod-td">
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                          }}
+                        >
+                          <div
+                            className="skeleton-bar"
+                            style={{
+                              width: 38,
+                              height: 38,
+                              minWidth: 38,
+                              borderRadius: 10,
+                            }}
+                          />
+                          <div>
+                            <div
+                              className="skeleton-bar"
+                              style={{
+                                width: 140,
+                                height: 13,
+                                marginBottom: 6,
+                              }}
+                            />
+                            <div
+                              className="skeleton-bar"
+                              style={{ width: 80, height: 11 }}
+                            />
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="prod-td col-provinsi"><div className="skeleton-bar" style={{ width: 80, height: 13 }} /></td>
-                    <td className="prod-td"><div className="skeleton-bar" style={{ width: 70, height: 22, borderRadius: 9 }} /></td>
-                    <td className="prod-td col-harga"><div className="skeleton-bar" style={{ width: 90, height: 13 }} /></td>
-                    <td className="prod-td col-deskripsi"><div className="skeleton-bar" style={{ width: 160, height: 13 }} /></td>
-                    <td className="prod-td col-date"><div className="skeleton-bar" style={{ width: 80, height: 13 }} /></td>
-                    <td className="prod-td"><div style={{ display: "flex", gap: "6px", justifyContent: "center" }}><div className="skeleton-bar" style={{ width: 30, height: 30, borderRadius: 9 }} /><div className="skeleton-bar" style={{ width: 30, height: 30, borderRadius: 9 }} /></div></td>
-                  </tr>
-                ))}
-
-                {/* Empty state */}
+                      </td>
+                      <td className="prod-td col-provinsi">
+                        <div
+                          className="skeleton-bar"
+                          style={{ width: 80, height: 13 }}
+                        />
+                      </td>
+                      <td className="prod-td">
+                        <div
+                          className="skeleton-bar"
+                          style={{ width: 70, height: 22, borderRadius: 9 }}
+                        />
+                      </td>
+                      <td className="prod-td col-harga">
+                        <div
+                          className="skeleton-bar"
+                          style={{ width: 90, height: 13 }}
+                        />
+                      </td>
+                      <td className="prod-td col-deskripsi">
+                        <div
+                          className="skeleton-bar"
+                          style={{ width: 160, height: 13 }}
+                        />
+                      </td>
+                      <td className="prod-td col-date">
+                        <div
+                          className="skeleton-bar"
+                          style={{ width: 80, height: 13 }}
+                        />
+                      </td>
+                      <td className="prod-td">
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "6px",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <div
+                            className="skeleton-bar"
+                            style={{ width: 30, height: 30, borderRadius: 9 }}
+                          />
+                          <div
+                            className="skeleton-bar"
+                            style={{ width: 30, height: 30, borderRadius: 9 }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} style={{ padding: "56px 32px", textAlign: "center" }}>
-                      <Package size={36} color="#1e293b" style={{ margin: "0 auto 12px", display: "block" }} />
-                      <p style={{ color: "#475569", fontSize: "14px", margin: 0 }}>
+                    <td
+                      colSpan={7}
+                      style={{ padding: "56px 32px", textAlign: "center" }}
+                    >
+                      <Package
+                        size={36}
+                        color="#1e293b"
+                        style={{ margin: "0 auto 12px", display: "block" }}
+                      />
+                      <p
+                        style={{
+                          color: "#475569",
+                          fontSize: "14px",
+                          margin: 0,
+                        }}
+                      >
                         {search || kategoriFilter !== "all"
                           ? "Tidak ada produk yang cocok."
                           : "Belum ada produk terdaftar."}
                       </p>
                       {(search || kategoriFilter !== "all") && (
                         <button
-                          onClick={() => { setSearch(""); setKategoriFilter("all"); }}
+                          onClick={() => {
+                            setSearch("");
+                            setKategoriFilter("all");
+                          }}
                           style={{
-                            marginTop: "12px", background: "none", border: "none",
-                            color: "#ffd700", fontSize: "12px", fontWeight: 600,
-                            cursor: "pointer", fontFamily: "inherit",
+                            marginTop: "12px",
+                            background: "none",
+                            border: "none",
+                            color: "#ffd700",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
                           }}
                         >
                           Reset filter →
@@ -930,150 +1861,258 @@ export default function ProductPage() {
                     </td>
                   </tr>
                 )}
-
-                {/* Data rows */}
-                {!loading && filtered.map((p, i) => {
-                  const katCfg = getKategoriCfg(p.kategori);
-                  return (
-                    <tr
-                      key={p.id}
-                      style={{
-                        borderBottom: i < filtered.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
-                        transition: "background 0.15s",
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                    >
-                      {/* Produk */}
-                      <td className="prod-td">
-                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                          {/* Thumbnail */}
-                          <div style={{
-                            width: "38px", height: "38px", minWidth: "38px", borderRadius: "10px",
-                            background: "rgba(255,215,0,0.06)", border: "1px solid rgba(255,215,0,0.12)",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            overflow: "hidden", flexShrink: 0,
-                          }}>
-                            {p.image_preview || p.gambar_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={p.image_preview ?? p.gambar_url ?? ""}
-                                alt={p.nama}
-                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                onError={e => { e.currentTarget.style.display = "none"; }}
-                              />
-                            ) : (
-                              <Package size={16} color="#ffd700" />
-                            )}
-                          </div>
-                          <div style={{ minWidth: 0 }}>
-                            <p style={{
-                              fontWeight: 700, color: "#fff", fontSize: "14px", margin: 0,
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                              maxWidth: "200px",
-                            }}>
-                              {p.nama}
-                            </p>
-                            <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "3px" }}>
-                              <span style={{ fontSize: "11px", color: "#475569" }}>ID #{p.id}</span>
-                              {p.is_free_trial && (
-                                <span className="free-badge">
-                                  <CheckCircle size={9} /> FREE
-                                </span>
+                {!loading &&
+                  filtered.map((p, i) => {
+                    const katCfg = getKategoriCfg(p.kategori);
+                    return (
+                      <tr
+                        key={p.id}
+                        style={{
+                          borderBottom:
+                            i < filtered.length - 1
+                              ? "1px solid rgba(255,255,255,0.04)"
+                              : "none",
+                          transition: "background 0.15s",
+                        }}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.background =
+                            "rgba(255,255,255,0.02)")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.background = "transparent")
+                        }
+                      >
+                        <td className="prod-td">
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "12px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "38px",
+                                height: "38px",
+                                minWidth: "38px",
+                                borderRadius: "10px",
+                                background: "rgba(255,215,0,0.06)",
+                                border: "1px solid rgba(255,215,0,0.12)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                overflow: "hidden",
+                              }}
+                            >
+                              {p.gambar_url ? (
+                                <img
+                                  src={p.gambar_url}
+                                  alt={p.nama}
+                                  style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                  }}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                  }}
+                                />
+                              ) : (
+                                <Package size={16} color="#ffd700" />
                               )}
                             </div>
+                            <div style={{ minWidth: 0 }}>
+                              <p
+                                style={{
+                                  fontWeight: 700,
+                                  color: "#fff",
+                                  fontSize: "14px",
+                                  margin: 0,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  maxWidth: "200px",
+                                }}
+                              >
+                                {p.nama}
+                              </p>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "5px",
+                                  marginTop: "3px",
+                                }}
+                              >
+                                <span
+                                  style={{ fontSize: "11px", color: "#475569" }}
+                                >
+                                  ID #{p.id}
+                                </span>
+                                {p.is_free_trial && (
+                                  <span className="free-badge">
+                                    <CheckCircle size={9} /> FREE
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-
-                      {/* Provinsi */}
-                      <td className="prod-td col-provinsi">
-                        {p.provinsi ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                            <MapPin size={11} color="#475569" />
-                            <span style={{ fontSize: "13px", color: "#64748b" }}>{p.provinsi}</span>
-                          </div>
-                        ) : (
-                          <span style={{ color: "#334155", fontSize: "13px" }}>—</span>
-                        )}
-                      </td>
-
-                      {/* Kategori */}
-                      <td className="prod-td">
-                        {p.kategori ? (
-                          <span className="kat-badge" style={{ background: katCfg.bg, color: katCfg.color }}>
-                            {p.kategori}
+                        </td>
+                        <td className="prod-td col-provinsi">
+                          {p.provinsi ? (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "5px",
+                              }}
+                            >
+                              <MapPin size={11} color="#475569" />
+                              <span
+                                style={{ fontSize: "13px", color: "#64748b" }}
+                              >
+                                {p.provinsi}
+                              </span>
+                            </div>
+                          ) : (
+                            <span
+                              style={{ color: "#334155", fontSize: "13px" }}
+                            >
+                              —
+                            </span>
+                          )}
+                        </td>
+                        <td className="prod-td">
+                          {p.kategori ? (
+                            <span
+                              className="kat-badge"
+                              style={{
+                                background: katCfg.bg,
+                                color: katCfg.color,
+                              }}
+                            >
+                              {p.kategori}
+                            </span>
+                          ) : (
+                            <span
+                              style={{ color: "#334155", fontSize: "12px" }}
+                            >
+                              —
+                            </span>
+                          )}
+                        </td>
+                        <td className="prod-td col-harga">
+                          <span
+                            style={{
+                              fontSize: "13px",
+                              fontWeight: 700,
+                              color: p.harga ? "#e2e8f0" : "#4ade80",
+                            }}
+                          >
+                            {formatRupiah(p.harga)}
                           </span>
-                        ) : (
-                          <span style={{ color: "#334155", fontSize: "12px" }}>—</span>
-                        )}
-                      </td>
-
-                      {/* Harga */}
-                      <td className="prod-td col-harga">
-                        <span style={{
-                          fontSize: "13px",
-                          fontWeight: 700,
-                          color: p.harga ? "#e2e8f0" : "#4ade80",
-                        }}>
-                          {formatRupiah(p.harga)}
-                        </span>
-                      </td>
-
-                      {/* Deskripsi */}
-                      <td className="prod-td col-deskripsi">
-                        <span style={{
-                          fontSize: "12px", color: "#475569",
-                          display: "block", maxWidth: "200px",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        }}>
-                          {p.deskripsi ?? "—"}
-                        </span>
-                      </td>
-
-                      {/* Dibuat */}
-                      <td className="prod-td col-date" style={{ fontSize: "12px", color: "#64748b" }}>
-                        {formatDate(p.created_at)}
-                      </td>
-
-                      {/* Aksi */}
-                      <td className="prod-td">
-                        <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                          <button className="action-btn edit" onClick={() => openEdit(p)} title="Edit">
-                            <Pencil size={13} />
-                          </button>
-                          <button className="action-btn del" onClick={() => setDeleteTarget(p)} title="Hapus">
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td className="prod-td col-deskripsi">
+                          <span
+                            style={{
+                              fontSize: "12px",
+                              color: "#475569",
+                              display: "block",
+                              maxWidth: "200px",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {p.deskripsi ?? "—"}
+                          </span>
+                        </td>
+                        <td
+                          className="prod-td col-date"
+                          style={{ fontSize: "12px", color: "#64748b" }}
+                        >
+                          {formatDate(p.created_at)}
+                        </td>
+                        <td className="prod-td">
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "6px",
+                              justifyContent: "center",
+                              alignItems: "center",
+                            }}
+                          >
+                            <button
+                              className="action-btn edit"
+                              onClick={() => openEdit(p)}
+                              title="Edit"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            {p.file_path && (
+                              <button
+                                className="action-btn download"
+                                onClick={async () => {
+                                  const url = await getSignedUrl(p.file_path!);
+                                  if (url) window.open(url, "_blank");
+                                }}
+                                title="Download file"
+                              >
+                                <Download size={13} />
+                              </button>
+                            )}
+                            <button
+                              className="action-btn del"
+                              onClick={() => setDeleteTarget(p)}
+                              title="Hapus"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
 
-          {/* Footer count */}
           {!loading && products.length > 0 && (
-            <div style={{
-              padding: "13px 28px", borderTop: "1px solid rgba(255,255,255,0.04)",
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-            }}>
+            <div
+              style={{
+                padding: "13px 28px",
+                borderTop: "1px solid rgba(255,255,255,0.04)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
               <span style={{ fontSize: "12px", color: "#334155" }}>
                 Menampilkan{" "}
-                <span style={{ color: "#64748b", fontWeight: 600 }}>{filtered.length}</span>
-                {" "}dari{" "}
-                <span style={{ color: "#64748b", fontWeight: 600 }}>{products.length}</span>
-                {" "}produk
+                <span style={{ color: "#64748b", fontWeight: 600 }}>
+                  {filtered.length}
+                </span>{" "}
+                dari{" "}
+                <span style={{ color: "#64748b", fontWeight: 600 }}>
+                  {products.length}
+                </span>{" "}
+                produk
               </span>
               {(search || kategoriFilter !== "all") && (
                 <button
-                  onClick={() => { setSearch(""); setKategoriFilter("all"); }}
+                  onClick={() => {
+                    setSearch("");
+                    setKategoriFilter("all");
+                  }}
                   style={{
-                    background: "none", border: "none", color: "#ffd700",
-                    fontSize: "12px", fontWeight: 600, cursor: "pointer",
-                    fontFamily: "inherit", padding: 0,
+                    background: "none",
+                    border: "none",
+                    color: "#ffd700",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    padding: 0,
                   }}
                 >
                   Reset filter ×
@@ -1081,7 +2120,6 @@ export default function ProductPage() {
               )}
             </div>
           )}
-
         </div>
       </div>
     </>

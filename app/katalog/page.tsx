@@ -93,10 +93,18 @@ export default function Katalog() {
         "Elemen dekoratif bunga kamboja & sesajen untuk detail lingkungan.",
       harga: "70k",
     },
+    {
+      id: 10,
+      nama: "Pura Meru Bali",
+      provinsi: "BALI",
+      kategori: "bali",
+      deskripsi:
+        "Aset bangunan 2D bertema arsitektur tradisional Bali yang ikonik.",
+      harga: "70k",
+    },
   ];
 
   useEffect(() => {
-    // Cek status login
     const loggedIn = localStorage.getItem("isLoggedIn") === "true";
     if (loggedIn) {
       setUser({
@@ -105,7 +113,6 @@ export default function Katalog() {
       });
     }
 
-    // AMBIL DATA DARI SUPABASE (Table: product)
     const fetchProducts = async () => {
       try {
         setLoading(true);
@@ -130,10 +137,16 @@ export default function Katalog() {
     fetchProducts();
   }, []);
 
+  // ✅ FIX FILTER: Menyamakan format kategori ke lowercase agar Bali muncul
   const asetFiltered =
     kategori === "semua"
       ? products
-      : products.filter((item) => (item.kategori || item.cat) === kategori);
+      : products.filter((item) => {
+          const itemCat = (item.kategori || item.cat || "")
+            .toLowerCase()
+            .trim();
+          return itemCat === kategori.toLowerCase().trim();
+        });
 
   return (
     <main
@@ -186,6 +199,7 @@ export default function Katalog() {
                 cursor: "pointer",
                 fontWeight: "bold",
                 textTransform: "capitalize",
+                transition: "0.3s ease",
               }}
             >
               {cat.replace("-", " ")}
@@ -332,8 +346,15 @@ export default function Katalog() {
                     fontWeight: "600",
                   }}
                   onClick={() => {
-                    // ✅ FIX: item.id sekarang ikut dikirim ke detail-produk
-                    const url = `/detail-produk?id=${encodeURIComponent(item.id)}&nama=${encodeURIComponent(item.nama)}&harga=${encodeURIComponent(item.harga || "70k")}&desc=${encodeURIComponent(item.deskripsi || item.desc || "")}`;
+                    const url = `/detail-produk?id=${encodeURIComponent(
+                      item.id,
+                    )}&nama=${encodeURIComponent(
+                      item.nama,
+                    )}&harga=${encodeURIComponent(
+                      item.harga || "70k",
+                    )}&desc=${encodeURIComponent(
+                      item.deskripsi || item.desc || "",
+                    )}`;
                     window.location.href = url;
                   }}
                 >
@@ -353,27 +374,48 @@ export default function Katalog() {
           borderTop: "1px solid rgba(255,255,255,0.05)",
         }}
       >
-        <div style={{ marginBottom: "20px" }}>
+        <div style={{ marginBottom: "35px" }}>
           <a
             href="https://instagram.com/nusantaraassets5"
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              color: "#ffd700",
-              textDecoration: "none",
-              fontWeight: "bold",
-            }}
+            className="highlight-follow"
           >
             Follow us on Instagram
           </a>
         </div>
         <p style={{ color: "#64748b", fontSize: "14px" }}>
-          &copy; 2026 NusantaraAssets - Oleh FantasticFive
+          &copy; NusantaraAssets - Oleh FantasticFive
         </p>
         <p style={{ fontSize: "11px", marginTop: "8px", color: "#475569" }}>
-          Informatics | Universitas Jenderal Soedirman
+          Cultural Heritage in Every Pixel — © 2026. All Rights Reserved.
         </p>
       </footer>
+
+      {/* --- STYLING KHUSUS UNTUK FOLLOW US (SAMA DENGAN PAGE TSX) --- */}
+      <style jsx>{`
+        .highlight-follow {
+          display: inline-block !important;
+          background: #ffd700 !important;
+          color: #020617 !important;
+          padding: 10px 24px !important;
+          border-radius: 12px !important;
+          font-weight: 800 !important;
+          text-decoration: none !important;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+
+          /* Efek Border Kuning & Glow */
+          border: 2px solid #eab308 !important;
+          box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
+        }
+
+        .highlight-follow:hover {
+          transform: translateY(-3px) !important;
+          background: #ffe44d !important;
+          box-shadow: 0 8px 25px rgba(255, 215, 0, 0.4) !important;
+          border-color: #ffd700 !important;
+        }
+      `}</style>
     </main>
   );
 }
