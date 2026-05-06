@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import Navbar from "@/app/components/Navbar";
 import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 import {
@@ -13,13 +12,16 @@ import {
   Calendar,
   CreditCard,
   CircleDollarSign,
+  Loader2,
 } from "lucide-react";
 
+/* ─── Types ─── */
 interface Produk {
   id: number;
   name: string;
   harga?: number;
   file_path?: string;
+  gambar_url?: string; // tambahan
 }
 
 interface Pesanan {
@@ -32,15 +34,43 @@ interface Pesanan {
   produk?: Produk | null;
 }
 
+/* ─── Helpers ─── */
+const formatRupiah = (amount?: number) => {
+  if (!amount) return "Gratis";
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+  }).format(amount);
+};
+
+const getDisplayStatus = (
+  pesanan: Pesanan,
+): "approved" | "declined" | "pending" => {
+  if (pesanan.is_approved === true || pesanan.status === "approved") {
+    return "approved";
+  }
+  if (pesanan.status === "rejected") {
+    return "declined";
+  }
+  return "pending";
+};
+
 export default function PesananPage() {
   const [pesananList, setPesananList] = useState<Pesanan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPesanan = async () => {
       try {
+        const supabase = createSupabaseBrowser();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         const customerId =
+          session?.user?.id ||
           localStorage.getItem("userId") ||
           localStorage.getItem("userUid") ||
           "";
@@ -51,8 +81,6 @@ export default function PesananPage() {
           return;
         }
 
-        const supabase = createSupabaseBrowser();
-
         const { data: orders, error: ordersError } = await supabase
           .from("orders")
           .select("*")
@@ -60,6 +88,7 @@ export default function PesananPage() {
           .order("created_at", { ascending: false });
 
         if (ordersError) throw ordersError;
+
         if (!orders || orders.length === 0) {
           setPesananList([]);
           setLoading(false);
@@ -69,7 +98,7 @@ export default function PesananPage() {
         const productIds = orders.map((order) => order.product_id);
         const { data: products, error: productsError } = await supabase
           .from("product")
-          .select("id, nama, harga, file_path") // tambah harga
+          .select("id, nama, harga, file_path, gambar_url") // tambah gambar_url
           .in("id", productIds);
 
         const produkMap: Record<number, Produk> = {};
@@ -80,6 +109,7 @@ export default function PesananPage() {
               name: p.nama,
               harga: p.harga,
               file_path: p.file_path,
+              gambar_url: p.gambar_url, // mapping baru
             };
           });
         }
@@ -95,9 +125,13 @@ export default function PesananPage() {
         }));
 
         setPesananList(merged);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Gagal mengambil pesanan:", err);
-        setError(err.message || "Terjadi kesalahan saat memuat pesanan.");
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Terjadi kesalahan saat memuat pesanan.",
+        );
       } finally {
         setLoading(false);
       }
@@ -106,47 +140,79 @@ export default function PesananPage() {
     fetchPesanan();
   }, []);
 
-  const getDisplayStatus = (pesanan: Pesanan): "approved" | "declined" | "pending" => {
-    if (pesanan.is_approved === true || pesanan.status === "approved") {
-      return "approved";
-    }
-    if (pesanan.status === "declined") {
-      return "declined";
-    }
-    return "pending";
-  };
+  const handleDownload = async (orderId: string, productName?: string) => {
+    const supabase = createSupabaseBrowser();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const userId =
+      session?.user?.id ||
+      localStorage.getItem("userId") ||
+      localStorage.getItem("userUid");
 
-  const getStatusBadge = (statusDisplay: "approved" | "declined" | "pending") => {
-    switch (statusDisplay) {
-      case "approved":
-        return (
-          <span className="badge badge-approved">
-            <CheckCircle size={14} /> Approved
-          </span>
-        );
-      case "declined":
-        return (
-          <span className="badge badge-declined">
-            <AlertCircle size={14} /> Declined
-          </span>
-        );
-      case "pending":
-      default:
-        return (
-          <span className="badge badge-pending">
-            <Clock size={14} /> Pending
-          </span>
-        );
+    if (!userId) {
+      alert("Anda harus login terlebih dahulu.");
+      return;
     }
-  };
 
-  const formatRupiah = (amount?: number) => {
-    if (!amount) return "Gratis";
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      minimumFractionDigits: 0,
-    }).format(amount);
+    setDownloadingId(orderId);
+    try {
+      const response = await fetch(
+        `/api/download/${orderId}?userId=${encodeURIComponent(userId)}`,
+      );
+
+      if (!response.ok) {
+        let errorMessage = `Gagal mengunduh (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {}
+        throw new Error(errorMessage);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+
+      let filename = "";
+      const disposition = response.headers.get("Content-Disposition");
+      if (disposition) {
+        const utf8Match = disposition.match(/filename\*=(?:UTF-8'')([^;]+)/i);
+        if (utf8Match) {
+          filename = decodeURIComponent(utf8Match[1]);
+        } else {
+          const asciiMatch = disposition.match(/filename="([^"]+)"/i);
+          if (asciiMatch) {
+            filename = asciiMatch[1];
+          }
+        }
+      }
+
+      if (!filename) {
+        const ext = blob.type.split("/")[1] || "zip";
+        filename = productName
+          ? `${productName.replace(/[^a-zA-Z0-9_\-. ]/g, "_")}.${ext}`
+          : `aset-${orderId.slice(0, 8)}.${ext}`;
+      }
+
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 10_000);
+    } catch (err: unknown) {
+      console.error("Download error:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Gagal mengunduh, coba lagi nanti.",
+      );
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   return (
@@ -163,7 +229,8 @@ export default function PesananPage() {
           <p>Pantau semua transaksi aset digital Nusantara kamu</p>
         </div>
 
-        {loading ? (
+        {/* ─── Loading Skeleton ─── */}
+        {loading && (
           <div className="loading-skeleton">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="skeleton-card">
@@ -173,33 +240,53 @@ export default function PesananPage() {
               </div>
             ))}
           </div>
-        ) : error ? (
+        )}
+
+        {/* ─── Error State ─── */}
+        {!loading && error && (
           <div className="error-state">
             <AlertCircle size={48} />
             <p>{error}</p>
           </div>
-        ) : pesananList.length === 0 ? (
+        )}
+
+        {/* ─── Empty State ─── */}
+        {!loading && !error && pesananList.length === 0 && (
           <div className="empty-state">
             <ShoppingBag size={48} />
             <h3>Belum ada pesanan</h3>
             <p>Yuk, mulai jelajahi katalog aset menarik kami!</p>
           </div>
-        ) : (
+        )}
+
+        {/* ─── Daftar Pesanan ─── */}
+        {!loading && !error && pesananList.length > 0 && (
           <div className="pesanan-list">
             {pesananList.map((pesanan) => {
               const transactionCode = pesanan.id.slice(0, 8).toUpperCase();
               const statusDisplay = getDisplayStatus(pesanan);
               const isApproved = statusDisplay === "approved";
+              const isDownloading = downloadingId === pesanan.id;
 
               return (
                 <div key={pesanan.id} className="pesanan-card">
                   <div className="card-left">
-                    <div className="product-avatar">
-                      {pesanan.produk?.name?.[0]?.toUpperCase() || "?"}
-                    </div>
+                    {/* Avatar: gambar jika ada, jika tidak fallback huruf */}
+                    {pesanan.produk?.gambar_url ? (
+                      <img
+                        src={pesanan.produk.gambar_url}
+                        alt={pesanan.produk.name || "Produk"}
+                        className="product-avatar-img"
+                      />
+                    ) : (
+                      <div className="product-avatar">
+                        {pesanan.produk?.name?.[0]?.toUpperCase() || "?"}
+                      </div>
+                    )}
                     <div className="card-info">
                       <div className="product-name">
-                        {pesanan.produk?.name || `Produk #${pesanan.product_id}`}
+                        {pesanan.produk?.name ||
+                          `Produk #${pesanan.product_id}`}
                       </div>
                       <div className="transaction-code">
                         Kode Transaksi: <span>{transactionCode}</span>
@@ -207,13 +294,16 @@ export default function PesananPage() {
                       <div className="order-meta">
                         <span className="meta-item">
                           <Calendar size={13} />
-                          {new Date(pesanan.created_at).toLocaleDateString("id-ID", {
-                            day: "numeric",
-                            month: "long",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {new Date(pesanan.created_at).toLocaleDateString(
+                            "id-ID",
+                            {
+                              day: "numeric",
+                              month: "long",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            },
+                          )}
                         </span>
                         {pesanan.metode_pembayaran && (
                           <span className="meta-item">
@@ -228,17 +318,50 @@ export default function PesananPage() {
                       </div>
                     </div>
                   </div>
+
                   <div className="card-right">
-                    {getStatusBadge(statusDisplay)}
-                    {isApproved ? (
-                      <Link href="/beranda" className="btn-download">
-                        <Download size={16} /> Unduh Aset
-                      </Link>
-                    ) : (
-                      <button className="btn-download disabled" disabled>
-                        <Download size={16} /> Tidak Tersedia
-                      </button>
-                    )}
+                    <span
+                      className={`badge ${
+                        statusDisplay === "approved"
+                          ? "badge-approved"
+                          : statusDisplay === "declined"
+                            ? "badge-declined"
+                            : "badge-pending"
+                      }`}
+                    >
+                      {statusDisplay === "approved" ? (
+                        <CheckCircle size={14} />
+                      ) : statusDisplay === "declined" ? (
+                        <AlertCircle size={14} />
+                      ) : (
+                        <Clock size={14} />
+                      )}
+                      {statusDisplay === "approved"
+                        ? "Disetujui"
+                        : statusDisplay === "declined"
+                          ? "Ditolak"
+                          : "Menunggu"}
+                    </span>
+
+                    <button
+                      className={`btn-download ${
+                        !isApproved || isDownloading ? "disabled" : ""
+                      }`}
+                      disabled={!isApproved || isDownloading}
+                      onClick={() =>
+                        handleDownload(pesanan.id, pesanan.produk?.name)
+                      }
+                    >
+                      {isDownloading ? (
+                        <>
+                          <Loader2 size={16} className="spinner" /> Mengunduh...
+                        </>
+                      ) : (
+                        <>
+                          <Download size={16} /> Unduh Aset
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               );
@@ -247,12 +370,13 @@ export default function PesananPage() {
         )}
       </div>
 
-      <style>{`
+      {/* ─── Styling ─── */}
+      <style jsx>{`
         .pesanan-page {
           background: linear-gradient(135deg, #0b1120 0%, #0f172a 100%);
           min-height: 100vh;
           color: #e2e8f0;
-          font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+          font-family: "Plus Jakarta Sans", "Inter", sans-serif;
         }
         .pesanan-container {
           max-width: 860px;
@@ -286,6 +410,7 @@ export default function PesananPage() {
           color: #94a3b8;
           font-size: 1rem;
         }
+
         .loading-skeleton {
           display: flex;
           flex-direction: column;
@@ -313,10 +438,17 @@ export default function PesananPage() {
           width: 30%;
         }
         @keyframes pulse {
-          0% { opacity: 0.6; }
-          50% { opacity: 1; }
-          100% { opacity: 0.6; }
+          0% {
+            opacity: 0.6;
+          }
+          50% {
+            opacity: 1;
+          }
+          100% {
+            opacity: 0.6;
+          }
         }
+
         .error-state,
         .empty-state {
           text-align: center;
@@ -337,6 +469,7 @@ export default function PesananPage() {
           color: white;
           margin: 12px 0 6px;
         }
+
         .pesanan-list {
           display: flex;
           flex-direction: column;
@@ -361,12 +494,22 @@ export default function PesananPage() {
           box-shadow: 0 15px 35px -8px rgba(255, 215, 0, 0.08);
           transform: translateY(-2px);
         }
+
         .card-left {
           display: flex;
           align-items: center;
           gap: 16px;
           flex: 1;
           min-width: 240px;
+        }
+        /* style avatar gambar */
+        .product-avatar-img {
+          width: 48px;
+          height: 48px;
+          border-radius: 14px;
+          object-fit: cover;
+          border: 1px solid rgba(255, 215, 0, 0.2);
+          flex-shrink: 0;
         }
         .product-avatar {
           width: 48px;
@@ -414,13 +557,15 @@ export default function PesananPage() {
           gap: 4px;
           color: #94a3b8;
         }
+
         .card-right {
           display: flex;
           flex-direction: column;
           align-items: flex-end;
-          gap: 12px;
+          gap: 28px; /* perbaikan: jarak diperbesar biar gak nempel */
           flex-shrink: 0;
         }
+
         .badge {
           display: inline-flex;
           align-items: center;
@@ -429,6 +574,7 @@ export default function PesananPage() {
           border-radius: 30px;
           font-size: 0.8rem;
           font-weight: 600;
+          text-transform: capitalize;
         }
         .badge-approved {
           background: #10b98120;
@@ -445,26 +591,33 @@ export default function PesananPage() {
           color: #ef4444;
           border: 1px solid #ef444440;
         }
+
         .btn-download {
+          margin-top: 25%;
           display: inline-flex;
           align-items: center;
-          gap: 6px;
+          justify-content: center;
+          gap: 8px;
           background: linear-gradient(135deg, #ffd700, #fbbf24);
           color: #0f172a;
-          padding: 10px 20px;
+          padding: 12px 24px;
           border-radius: 30px;
           font-weight: 700;
           text-decoration: none;
           border: none;
           cursor: pointer;
-          font-size: 0.85rem;
+          font-size: 0.9rem;
           letter-spacing: -0.2px;
-          transition: all 0.2s;
-          box-shadow: 0 6px 18px rgba(255, 215, 0, 0.2);
+          transition: all 0.2s ease;
+          box-shadow: 0 6px 18px rgba(255, 215, 0, 0.25);
+          min-width: 160px;
         }
-        .btn-download:hover {
+        .btn-download:hover:not(.disabled) {
           transform: translateY(-2px);
           box-shadow: 0 10px 24px rgba(255, 215, 0, 0.35);
+        }
+        .btn-download:active:not(.disabled) {
+          transform: translateY(0);
         }
         .btn-download.disabled {
           background: #334155;
@@ -473,6 +626,16 @@ export default function PesananPage() {
           cursor: not-allowed;
           transform: none;
         }
+
+        .spinner {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
         @media (max-width: 600px) {
           .pesanan-card {
             flex-direction: column;
@@ -483,6 +646,12 @@ export default function PesananPage() {
             flex-direction: row;
             justify-content: flex-end;
             align-items: center;
+            gap: 24px; /* tetap jaga jarak di mobile */
+          }
+          .btn-download {
+            min-width: auto;
+            padding: 10px 20px;
+            font-size: 0.8rem;
           }
         }
       `}</style>

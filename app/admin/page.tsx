@@ -50,18 +50,40 @@ export default function LoginPage() {
       <div className="glass-card">
         <div className="brand-header">
           <div className="brand-icon animate-float">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ffd700" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="30"
+              height="30"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#ffd700"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 12l10 5 10-5M2 17l10 5 10-5" />
             </svg>
           </div>
-          <h1 className="brand-title">Nusa<span>Assets</span></h1>
-          <p className="brand-sub">Management Portal <span className="brand-version">v2.0</span></p>
+          <h1 className="brand-title">
+            Nusa<span>Assets</span>
+          </h1>
+          <p className="brand-sub">
+            Management Portal <span className="brand-version">v2.0</span>
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="field-wrapper">
             <span className="field-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
@@ -78,7 +100,16 @@ export default function LoginPage() {
 
           <div className="field-wrapper">
             <span className="field-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
@@ -91,18 +122,26 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-            <button type="button" className="toggle-pass" onClick={() => setShowPass(!showPass)}>
+            <button
+              type="button"
+              className="toggle-pass"
+              onClick={() => setShowPass(!showPass)}
+            >
               {showPass ? "Hide" : "Show"}
             </button>
           </div>
 
-          {error && <div className="error-box"><span>{error}</span></div>}
+          {error && (
+            <div className="error-box">
+              <span>{error}</span>
+            </div>
+          )}
 
           <button type="submit" className="btn-modern" disabled={loading}>
             {loading ? <span className="spinner" /> : "Masuk Sekarang"}
           </button>
         </form>
-        <p className="admin-footer">&copy; 2026 PT. Nusa Digital Aset</p>
+        <p className="admin-footer">&copy; 2026 NusantaraAssets</p>
       </div>
     </div>
   );
