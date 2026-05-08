@@ -5,18 +5,23 @@ export default function BioLink() {
   const links = [
     {
       name: "Website Utama",
-      url: "https://nusantaraassets.vercel.app/",
+      url: "https://www.nusantaraassets.com/",
       icon: "/img/logo.png",
     },
     {
       name: "Discord Community",
-      url: "https://discord.gg/HJv32AP7",
+      url: "https://discord.gg/232aWYaGRc",
       icon: "/img/discord.png",
     },
     {
       name: "Instagram",
       url: "https://instagram.com/nusantaraassets5",
       icon: "/img/ig.png",
+    },
+    {
+      name: "X",
+      url: "https://x.com/nusantaraassets?s=21",
+      icon: "/img/x.png",
     },
     {
       name: "TikTok",

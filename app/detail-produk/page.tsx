@@ -17,14 +17,13 @@ function DetailContent() {
     return () => unsubscribe();
   }, []);
 
-  // ✅ Ambil data dari searchParams (Termasuk Parameter 'img' baru)
   const id = searchParams.get("id") || "";
   const nama = searchParams.get("nama") || "Aset Nusantara";
   const harga = searchParams.get("harga") || "Rp 70k";
   const desc =
     searchParams.get("desc") ||
     "Aset berkualitas tinggi dari kebudayaan Nusantara.";
-  const previewImg = searchParams.get("img") || "/img/logo-preview.jpg"; // ✅ TAMBAHAN: AMBIL PARAMETER GAMBAR DI SINI
+  const previewImg = searchParams.get("img") || "/img/logo-preview.jpg";
 
   const isTrial = searchParams.get("isTrial") === "true";
   const fileUrl = searchParams.get("fileUrl") || "";
@@ -33,15 +32,8 @@ function DetailContent() {
     <main
       style={{ backgroundColor: "#0f172a", minHeight: "100vh", color: "white" }}
     >
-      {/* ===== NAVBAR FIXED + MOBILE MENU DROPDOWN ===== */}
       <div
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 1000,
-        }}
+        style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1000 }}
       >
         <nav id="navbar" className="navbar">
           <div
@@ -108,7 +100,6 @@ function DetailContent() {
         )}
       </div>
 
-      {/* Konten Detail */}
       <div
         className="detail-wrapper"
         style={{
@@ -130,10 +121,9 @@ function DetailContent() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            overflow: "hidden", // Agar gambar tidak keluar dari border radius
+            overflow: "hidden",
           }}
         >
-          {/* ✅ FIX: Gambar sekarang pakai variabel previewImg dari URL */}
           <img
             src={previewImg}
             alt="Preview Aset"
@@ -160,7 +150,6 @@ function DetailContent() {
         >
           {harga}
         </p>
-
         <p
           style={{
             color: "#94a3b8",
@@ -203,7 +192,6 @@ function DetailContent() {
                   window.location.href = "/login";
                   return;
                 }
-
                 if (fileUrl) {
                   alert("Yay! File 2D pixel art sedang diunduh! 🎁");
                   window.open(fileUrl, "_blank");
@@ -232,8 +220,17 @@ function DetailContent() {
               const keranjang = JSON.parse(
                 localStorage.getItem("nusantaraCart") || "[]",
               );
-              keranjang.push({ nama, harga });
+
+              // ✅ PERBAIKAN: Masukkan image_preview ke dalam objek keranjang
+              keranjang.push({
+                id,
+                nama,
+                harga,
+                image_preview: previewImg, // INI KUNCINYA AGAR GAMBAR MUNCUL DI KERANJANG
+              });
+
               localStorage.setItem("nusantaraCart", JSON.stringify(keranjang));
+              window.dispatchEvent(new Event("storage")); // Biar navbar update otomatis
               alert("Berhasil masuk keranjang! 🛒");
               window.location.href = "/keranjang";
             }}
@@ -306,14 +303,6 @@ function DetailContent() {
           padding: 15px 5%;
           border-bottom: 1px solid rgba(255, 215, 0, 0.2);
           animation: slideDown 0.3s ease;
-        }
-        .mobile-menu ul {
-          margin: 0;
-          padding: 0;
-        }
-        .mobile-menu a {
-          display: block;
-          padding: 10px 0;
         }
         @keyframes slideDown {
           from {

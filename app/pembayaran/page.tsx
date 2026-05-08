@@ -22,6 +22,115 @@ function generateTransactionId(): string {
   return `TRNSKSI-${random}`;
 }
 
+// ─── Daftar metode pembayaran ─────────────────────────────────────────────────
+const listMetode = [
+  { id: "qris", label: "QRIS", logo: "/img/logo-qris.png" },
+  { id: "dana", label: "DANA", logo: "/img/logo-dana.png" },
+  { id: "shopeepay", label: "ShopeePay", logo: "/img/logo-spay.png" },
+  { id: "gopay", label: "GoPay", logo: "/img/logo-gopay.png" },
+  { id: "ovo", label: "OVO", logo: "/img/logo-ovo.png" },
+];
+
+// ─── Data instruksi per metode ────────────────────────────────────────────────
+const dataMetode: Record<
+  string,
+  { tipe: "qris" | "ewallet"; nomor?: string; nama?: string }
+> = {
+  qris: { tipe: "qris" },
+  dana: {
+    tipe: "ewallet",
+    nomor: "+62 821-3753-4026",
+    nama: "Nova Chauliyatul Faizah",
+  },
+  shopeepay: {
+    tipe: "ewallet",
+    nomor: "+62 821-3753-4026",
+    nama: "NOVA CHAULIYATUL FAIZAH",
+  },
+  gopay: {
+    tipe: "ewallet",
+    nomor: "+62 821-3753-4026",
+    nama: "NOVA CHAULIYATUL FAIZAH",
+  },
+  ovo: {
+    tipe: "ewallet",
+    nomor: "+62 821-3753-4026",
+    nama: "Nova Chauliyatul Faizah",
+  },
+};
+
+// ─── Helper: format Rupiah ────────────────────────────────────────────────────
+function formatRupiah(nilai: number): string {
+  return "Rp " + nilai.toLocaleString("id-ID");
+}
+
+// ─── Komponen: Instruksi Pembayaran Dinamis ───────────────────────────────────
+function InstruksiPembayaran({
+  metode,
+  totalTagihan,
+}: {
+  metode: string;
+  totalTagihan: number;
+}) {
+  const info = dataMetode[metode];
+  if (!info) return null;
+
+  if (info.tipe === "qris") {
+    return (
+      <div className="instruksi-box">
+        <p className="instruksi-judul">Scan QRIS untuk membayar</p>
+        <p className="instruksi-nominal">
+          Nominal: <strong>{formatRupiah(totalTagihan)}</strong>
+        </p>
+        <div className="qr-wrapper">
+          <img
+            src="/img/qriss-na.png"
+            alt="QRIS NusantaraAssets"
+            className="qr-img"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
+            }}
+          />
+        </div>
+        <p className="instruksi-note">
+          Buka aplikasi e-wallet apapun, pilih Scan QR, lalu arahkan ke kode di
+          atas.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="instruksi-box">
+      <p className="instruksi-judul">
+        Transfer ke {metode.charAt(0).toUpperCase() + metode.slice(1)}
+      </p>
+      <div className="instruksi-detail">
+        <div className="instruksi-row">
+          <span className="instruksi-label">Nomor</span>
+          <span className="instruksi-value instruksi-highlight">
+            {info.nomor}
+          </span>
+        </div>
+        <div className="instruksi-row">
+          <span className="instruksi-label">Atas Nama</span>
+          <span className="instruksi-value">{info.nama}</span>
+        </div>
+        <div className="instruksi-row">
+          <span className="instruksi-label">Nominal</span>
+          <span className="instruksi-value instruksi-highlight">
+            {formatRupiah(totalTagihan)}
+          </span>
+        </div>
+      </div>
+      <p className="instruksi-note">
+        Transfer tepat sesuai nominal agar verifikasi lebih cepat.
+      </p>
+    </div>
+  );
+}
+
+// ─── Komponen Utama ───────────────────────────────────────────────────────────
 function PaymentContent() {
   const searchParams = useSearchParams();
   const [metode, setMetode] = useState("qris");
@@ -39,7 +148,7 @@ function PaymentContent() {
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
-    // 1. Logika Hitung Harga
+    // 1. Logika Hitung Harga (dipertahankan 100%)
     const hargaParams = searchParams.get("harga") || "";
     if (hargaParams) {
       const angkaSaja = parseInt(hargaParams.replace(/[^0-9]/g, "")) || 0;
@@ -62,7 +171,7 @@ function PaymentContent() {
       setTotalTagihan(totalKeranjang);
     }
 
-    // 2. RADAR REAL-TIME — cek status approved & rejected
+    // 2. RADAR REAL-TIME — cek status approved & rejected (dipertahankan 100%)
     const userEmail = localStorage.getItem("userEmail");
     if (userEmail) {
       // --- Listener: APPROVED ---
@@ -75,11 +184,9 @@ function PaymentContent() {
       const unsubscribeApproved = onSnapshot(qApproved, (snapshot) => {
         if (!snapshot.empty) {
           const docData = snapshot.docs[0].data();
-
           if (docData.download_link) {
             setDownloadUrl(docData.download_link);
           }
-
           const timeConfirmed =
             docData.verifiedAt?.toDate() || docData.createdAt?.toDate();
           if (timeConfirmed) {
@@ -121,6 +228,7 @@ function PaymentContent() {
     }
   }, [searchParams]);
 
+  // ── Handle file upload (dipertahankan + validasi 700KB) ──────────────────
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -144,35 +252,15 @@ function PaymentContent() {
     }
   };
 
-  const dataNomor: any = {
-    qris: "Scan QR Code di bawah",
-    dana: "+62 821-3753-4026 (Nova Chauliyatul Faizah)",
-    shopeepay: "+62 821-3753-4026 (NOVA CHAULIYATUL FAIZAH)",
-    gopay: "+62 821-3753-4026 (NOVA CHAULIYATUL FAIZAH)",
-    ovo: "+62 821-3753-4026 (Nova Chauliyatul Faizah)",
-  };
-
-  const selectMetode = (m: string) => {
-    setMetode(m);
-    if (m !== "qris") {
-      Swal.fire({
-        title: `Metode ${m.toUpperCase()}`,
-        html: `<div style="text-align: center; padding: 10px;"><p style="color: #94a3b8;">Transfer ke:</p><h2 style="color: #ffd700;">${dataNomor[m]}</h2></div>`,
-        icon: "info",
-        confirmButtonColor: "#ffd700",
-        background: "#1e293b",
-        color: "#fff",
-      });
-    }
-  };
-
+  // ── Handle konfirmasi pembayaran (DIUBAH AGAR SUPPORT KERANJANG) ─────────
   const handleKonfirmasi = async () => {
-    // STEP 1A: Validasi product_id dari URL params
     const productIdParam = searchParams.get("id");
-    if (!productIdParam) {
+    const savedCart = JSON.parse(localStorage.getItem("nusantaraCart") || "[]");
+
+    if (!productIdParam && savedCart.length === 0) {
       Swal.fire({
         title: "Produk Tidak Ditemukan!",
-        text: "Kembali ke halaman produk dan coba lagi.",
+        text: "Keranjang kosong atau produk tidak valid. Kembali ke katalog dan coba lagi.",
         icon: "error",
         confirmButtonColor: "#ffd700",
         background: "#1e293b",
@@ -181,7 +269,6 @@ function PaymentContent() {
       return;
     }
 
-    // STEP 1B: Validasi file ada
     if (!buktiPembayaran) {
       Swal.fire({
         title: "Bukti Pembayaran Belum Dipilih!",
@@ -194,8 +281,7 @@ function PaymentContent() {
       return;
     }
 
-    // STEP 1C: Validasi tipe file (hanya PNG & JPEG)
-    const allowedTypes = ["image/png", "image/jpeg"];
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg"];
     if (!allowedTypes.includes(buktiPembayaran.type)) {
       Swal.fire({
         title: "Format File Tidak Didukung!",
@@ -220,19 +306,16 @@ function PaymentContent() {
 
     try {
       const supabase = createSupabaseBrowser();
-
-      // STEP 2: Generate Transaction ID
       const transactionId = generateTransactionId();
 
-      // STEP 3: Tentukan ekstensi file dari file.type
       const extMap: Record<string, string> = {
         "image/png": ".png",
         "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
       };
       const ext = extMap[buktiPembayaran.type];
       const filePath = `bukti-bayar/${transactionId}${ext}`;
 
-      // STEP 4: Upload file asli ke Supabase Storage (bucket: pembayaran)
       const { error: uploadError } = await supabase.storage
         .from("pembayaran")
         .upload(filePath, buktiPembayaran, {
@@ -242,30 +325,48 @@ function PaymentContent() {
 
       if (uploadError) throw uploadError;
 
-      // STEP 5: Insert ke table orders
-      // ✅ Status di-set "pending" — TIDAK bisa diubah user karena RLS Supabase
-      // hanya admin (service role) yang bisa UPDATE status
       const customerId =
-        localStorage.getItem("userId") ||
-        localStorage.getItem("userUid") ||
-        "";
+        localStorage.getItem("userId") || localStorage.getItem("userUid") || "";
 
-      const { error: dbError } = await supabase.from("orders").insert({
-        customer_id: customerId,
-        product_id: parseInt(productIdParam),
-        metode_pembayaran: metode,
-        bukti_transfer_url: filePath,
-        status: "pending", // ✅ Diubah dari "waiting_verification" → "pending"
-      });
+      // ==========================================
+      // KODE BARU: LOGIKA PISAH PRODUK KERANJANG
+      // ==========================================
+      let ordersToInsert = [];
+
+      if (productIdParam) {
+        // 1. Jika Beli Langsung (1 Produk)
+        ordersToInsert.push({
+          customer_id: customerId,
+          product_id: parseInt(productIdParam),
+          metode_pembayaran: metode,
+          bukti_transfer_url: filePath,
+          status: "pending",
+        });
+      } else {
+        // 2. Jika Checkout dari Keranjang (Banyak Produk)
+        ordersToInsert = savedCart.map((item: any) => ({
+          customer_id: customerId,
+          product_id: parseInt(item.id || item.product_id), // Pastikan ID produk terekstrak
+          metode_pembayaran: metode,
+          bukti_transfer_url: filePath,
+          status: "pending",
+        }));
+      }
+
+      // Tembakkan semua produk sekaligus ke database
+      const { error: dbError } = await supabase
+        .from("orders")
+        .insert(ordersToInsert);
 
       if (dbError) throw dbError;
+      // ==========================================
 
-      // Kirim notifikasi EmailJS ke admin
       const emailParams = {
         from_name: localStorage.getItem("userName") || "Pembeli",
-        user_email:
-          localStorage.getItem("userEmail") || "Tidak ada email",
-        product_name: searchParams.get("nama") || "Aset Nusantara",
+        user_email: localStorage.getItem("userEmail") || "Tidak ada email",
+        product_name: productIdParam
+          ? searchParams.get("nama") || "Aset Nusantara"
+          : "Checkout Keranjang",
         total_price: totalTagihan.toLocaleString("id-ID"),
         payment_method: metode.toUpperCase(),
         order_id: transactionId,
@@ -277,6 +378,12 @@ function PaymentContent() {
         emailParams,
         process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY!,
       );
+
+      // 3. Hapus keranjang jika dari cart
+      if (!productIdParam) {
+        localStorage.removeItem("nusantaraCart");
+        window.dispatchEvent(new Event("storage"));
+      }
 
       Swal.fire({
         title: "Berhasil!",
@@ -301,15 +408,9 @@ function PaymentContent() {
     }
   };
 
-  const listMetode = [
-    { id: "qris", logo: "/img/logo-qris.png" },
-    { id: "dana", logo: "/img/logo-dana.png" },
-    { id: "shopeepay", logo: "/img/logo-spay.png" },
-    { id: "gopay", logo: "/img/logo-gopay.png" },
-    { id: "ovo", logo: "/img/logo-ovo.png" },
-  ];
-
+  // ─────────────────────────────────────────────────────────────────────────
   // ✅ UI: Pembayaran APPROVED
+  // ─────────────────────────────────────────────────────────────────────────
   if (isApproved) {
     return (
       <main className="payment-page">
@@ -341,7 +442,6 @@ function PaymentContent() {
                 mengunduh assets mu ya! Terimakasih"
               </p>
             </div>
-
             <button
               className="btn-confirm"
               style={{ marginTop: "30px" }}
@@ -361,45 +461,14 @@ function PaymentContent() {
             </button>
           </div>
         </div>
-        <style jsx>{`
-          .payment-page {
-            background: #0f172a;
-            min-height: 100vh;
-            color: white;
-          }
-          .payment-container {
-            padding: 120px 5% 40px;
-            display: flex;
-            justify-content: center;
-          }
-          .payment-box {
-            background: #1e293b;
-            padding: 40px;
-            border-radius: 30px;
-            max-width: 480px;
-            width: 100%;
-            text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-          }
-          .payment-title span {
-            color: #ffd700;
-          }
-          .btn-confirm {
-            background: #ffd700;
-            color: #000;
-            border: none;
-            width: 100%;
-            padding: 18px;
-            border-radius: 50px;
-            font-weight: 800;
-            cursor: pointer;
-          }
-        `}</style>
+        <PayStyles />
       </main>
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
   // ✅ UI: Pembayaran REJECTED
+  // ─────────────────────────────────────────────────────────────────────────
   if (isRejected) {
     return (
       <main className="payment-page">
@@ -429,11 +498,10 @@ function PaymentContent() {
                   lineHeight: "1.6",
                 }}
               >
-                Kemungkinan bukti tidak valid atau nominal tidak sesuai.
-                Silakan hubungi admin atau coba lagi dengan bukti yang benar.
+                Kemungkinan bukti tidak valid atau nominal tidak sesuai. Silakan
+                hubungi admin atau coba lagi dengan bukti yang benar.
               </p>
             </div>
-
             <button
               className="btn-confirm"
               style={{
@@ -445,7 +513,6 @@ function PaymentContent() {
             >
               COBA LAGI
             </button>
-
             <button
               style={{
                 marginTop: "12px",
@@ -467,91 +534,53 @@ function PaymentContent() {
             </button>
           </div>
         </div>
-        <style jsx>{`
-          .payment-page {
-            background: #0f172a;
-            min-height: 100vh;
-            color: white;
-          }
-          .payment-container {
-            padding: 120px 5% 40px;
-            display: flex;
-            justify-content: center;
-          }
-          .payment-box {
-            background: #1e293b;
-            padding: 40px;
-            border-radius: 30px;
-            max-width: 480px;
-            width: 100%;
-            text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-          }
-          .payment-title span {
-            color: #ffd700;
-          }
-          .payment-sub {
-            color: #94a3b8;
-            font-size: 14px;
-            margin-top: 8px;
-          }
-          .btn-confirm {
-            background: #ffd700;
-            color: #000;
-            border: none;
-            width: 100%;
-            padding: 18px;
-            border-radius: 50px;
-            font-weight: 800;
-            cursor: pointer;
-          }
-        `}</style>
+        <PayStyles />
       </main>
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
   // ✅ UI: Form Pembayaran (default)
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <main className="payment-page">
       <Navbar />
       <div className="payment-container">
         <div className="payment-box">
+          {/* ── Header ── */}
           <h2 className="payment-title">
             Checkout <span>Aset</span>
           </h2>
           <p className="payment-sub">Total Tagihan Kamu:</p>
-          <h1 className="payment-amount">
-            Rp {totalTagihan.toLocaleString("id-ID")}
-          </h1>
+          <h1 className="payment-amount">{formatRupiah(totalTagihan)}</h1>
 
+          {/* ── Pilih Metode Pembayaran (Card/Tab) ── */}
+          <p className="section-label">Pilih Metode Pembayaran:</p>
           <div className="method-grid">
             {listMetode.map((m) => (
               <button
                 key={m.id}
                 className={`method-btn ${metode === m.id ? "active" : ""}`}
-                onClick={() => selectMetode(m.id)}
+                onClick={() => setMetode(m.id)}
               >
                 <div className="method-left">
                   <img
                     src={m.logo}
-                    alt={m.id}
+                    alt={m.label}
                     className="method-logo-img"
                     onError={(e) => (e.currentTarget.style.display = "none")}
                   />
-                  <span className="method-name">{m.id.toUpperCase()}</span>
+                  <span className="method-name">{m.label}</span>
                 </div>
-                <span className="method-arrow">›</span>
+                {metode === m.id && <span className="method-check">✓</span>}
               </button>
             ))}
           </div>
 
-          {metode === "qris" && (
-            <div className="qr-area">
-              <p>Silakan Scan QRIS:</p>
-              <img src="/img/qriss-na.png" alt="QR" className="qr-img" />
-            </div>
-          )}
+          {/* ── Instruksi Pembayaran Dinamis — menyesuaikan metode & total ── */}
+          <InstruksiPembayaran metode={metode} totalTagihan={totalTagihan} />
 
+          {/* ── Upload Bukti Pembayaran ── */}
           <div className="upload-section">
             <p className="upload-label">Wajib Upload Bukti Pembayaran:</p>
             <input
@@ -579,6 +608,7 @@ function PaymentContent() {
             )}
           </div>
 
+          {/* ── Tombol Konfirmasi ── */}
           <button
             onClick={handleKonfirmasi}
             className={`btn-confirm ${!buktiPembayaran || isUploading ? "disabled" : ""}`}
@@ -588,129 +618,270 @@ function PaymentContent() {
           </button>
         </div>
       </div>
-      <style jsx>{`
-        .payment-page {
-          background: #0f172a;
-          min-height: 100vh;
-          color: white;
-        }
-        .payment-container {
-          padding: 120px 5% 40px;
-          display: flex;
-          justify-content: center;
-        }
-        .payment-box {
-          background: #1e293b;
-          padding: 40px;
-          border-radius: 30px;
-          max-width: 480px;
-          width: 100%;
-          text-align: center;
-          border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .payment-title span {
-          color: #ffd700;
-        }
-        .payment-amount {
-          color: #ffd700;
-          font-size: 38px;
-          margin: 10px 0 30px;
-          font-weight: 800;
-        }
-        .payment-sub {
-          color: #94a3b8;
-          font-size: 14px;
-          margin-top: 8px;
-        }
-        .method-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          margin-bottom: 25px;
-        }
-        .method-btn {
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          color: white;
-          padding: 15px 20px;
-          border-radius: 15px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          transition: 0.3s;
-        }
-        .method-btn.active {
-          background: #ffd700;
-          color: #000;
-        }
-        .method-left {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-        }
-        .method-logo-img {
-          height: 22px;
-          width: auto;
-          object-fit: contain;
-        }
-        .qr-area {
-          background: white;
-          padding: 20px;
-          border-radius: 20px;
-          color: black;
-          margin-bottom: 30px;
-        }
-        .qr-img {
-          width: 180px;
-        }
-        .upload-section {
-          margin-bottom: 25px;
-          padding: 20px;
-          background: rgba(255, 255, 255, 0.02);
-          border-radius: 20px;
-          border: 1px dashed rgba(255, 215, 0, 0.3);
-        }
-        .upload-label {
-          font-size: 13px;
-          color: #94a3b8;
-          margin-bottom: 12px;
-        }
-        .custom-upload-btn {
-          display: inline-block;
-          padding: 10px 20px;
-          background: #334155;
-          color: #fff;
-          border-radius: 10px;
-          cursor: pointer;
-          font-size: 12px;
-        }
-        .img-preview {
-          max-width: 100%;
-          margin-top: 15px;
-          border-radius: 10px;
-          border: 2px solid #ffd700;
-        }
-        .btn-confirm {
-          background: #ffd700;
-          color: #000;
-          border: none;
-          width: 100%;
-          padding: 18px;
-          border-radius: 50px;
-          font-weight: 800;
-          cursor: pointer;
-        }
-        .btn-confirm.disabled {
-          background: #475569;
-          color: #94a3b8;
-          cursor: not-allowed;
-        }
-      `}</style>
+      <PayStyles />
     </main>
   );
 }
 
+// ─── Styles terpusat ──────────────────────────────────────────────────────────
+function PayStyles() {
+  return (
+    <style jsx global>{`
+      .payment-page {
+        background: #0f172a;
+        min-height: 100vh;
+        color: white;
+      }
+      .payment-container {
+        padding: 120px 5% 60px;
+        display: flex;
+        justify-content: center;
+      }
+      .payment-box {
+        background: #1e293b;
+        padding: 40px;
+        border-radius: 30px;
+        max-width: 480px;
+        width: 100%;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      /* ── Header ── */
+      .payment-title {
+        font-size: 24px;
+        font-weight: 800;
+        margin: 0 0 6px;
+      }
+      .payment-title span {
+        color: #ffd700;
+      }
+      .payment-sub {
+        color: #94a3b8;
+        font-size: 14px;
+        margin: 8px 0 4px;
+      }
+      .payment-amount {
+        color: #ffd700;
+        font-size: 38px;
+        margin: 6px 0 28px;
+        font-weight: 800;
+      }
+
+      /* ── Metode Pembayaran ── */
+      .section-label {
+        font-size: 13px;
+        color: #94a3b8;
+        text-align: left;
+        margin-bottom: 12px;
+        font-weight: 600;
+      }
+      .method-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 24px;
+      }
+      .method-btn {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1.5px solid rgba(255, 255, 255, 0.08);
+        color: white;
+        padding: 14px 18px;
+        border-radius: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        transition:
+          border-color 0.2s,
+          background 0.2s,
+          transform 0.1s;
+        text-align: left;
+      }
+      .method-btn:hover {
+        border-color: rgba(255, 215, 0, 0.35);
+        background: rgba(255, 215, 0, 0.04);
+        transform: translateX(2px);
+      }
+      .method-btn.active {
+        border-color: #ffd700;
+        background: rgba(255, 215, 0, 0.08);
+      }
+      .method-left {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .method-logo-img {
+        height: 24px;
+        width: auto;
+        object-fit: contain;
+      }
+      .method-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: white;
+      }
+      .method-check {
+        color: #ffd700;
+        font-size: 14px;
+        font-weight: 800;
+        width: 24px;
+        height: 24px;
+        background: rgba(255, 215, 0, 0.15);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      /* ── Instruksi Pembayaran Dinamis ── */
+      .instruksi-box {
+        background: rgba(255, 215, 0, 0.04);
+        border: 1px dashed rgba(255, 215, 0, 0.35);
+        border-radius: 18px;
+        padding: 22px 20px;
+        margin-bottom: 24px;
+        text-align: left;
+        animation: fadeSlideIn 0.22s ease;
+      }
+      @keyframes fadeSlideIn {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .instruksi-judul {
+        font-size: 14px;
+        font-weight: 700;
+        color: #ffd700;
+        margin: 0 0 14px;
+      }
+      .instruksi-nominal {
+        font-size: 13px;
+        color: #94a3b8;
+        margin: 0 0 16px;
+      }
+      .instruksi-nominal strong {
+        color: #ffd700;
+        font-size: 15px;
+      }
+      .instruksi-detail {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .instruksi-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+      }
+      .instruksi-label {
+        color: #64748b;
+      }
+      .instruksi-value {
+        color: white;
+        font-weight: 600;
+        text-align: right;
+      }
+      .instruksi-highlight {
+        color: #ffd700;
+        font-size: 15px;
+        font-weight: 800;
+      }
+      .instruksi-note {
+        font-size: 11px;
+        color: #f59e0b;
+        margin: 0;
+        line-height: 1.6;
+      }
+
+      /* ── QRIS area ── */
+      .qr-wrapper {
+        display: flex;
+        justify-content: center;
+        margin: 4px 0 16px;
+      }
+      .qr-img {
+        width: 180px;
+        height: 180px;
+        object-fit: contain;
+        border-radius: 12px;
+        background: white;
+        padding: 10px;
+      }
+
+      /* ── Upload Section ── */
+      .upload-section {
+        margin-bottom: 25px;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 20px;
+        border: 1px dashed rgba(255, 215, 0, 0.3);
+      }
+      .upload-label {
+        font-size: 13px;
+        color: #94a3b8;
+        margin-bottom: 12px;
+      }
+      .custom-upload-btn {
+        display: inline-block;
+        padding: 10px 20px;
+        background: #334155;
+        color: #fff;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background 0.2s;
+      }
+      .custom-upload-btn:hover {
+        background: #475569;
+      }
+      .img-preview {
+        max-width: 100%;
+        margin-top: 15px;
+        border-radius: 10px;
+        border: 2px solid #ffd700;
+      }
+
+      /* ── Tombol Konfirmasi ── */
+      .btn-confirm {
+        background: #ffd700;
+        color: #000;
+        border: none;
+        width: 100%;
+        padding: 18px;
+        border-radius: 50px;
+        font-weight: 800;
+        cursor: pointer;
+        font-size: 15px;
+        letter-spacing: 0.4px;
+        transition:
+          opacity 0.2s,
+          transform 0.1s;
+      }
+      .btn-confirm:hover:not(.disabled) {
+        opacity: 0.9;
+        transform: translateY(-1px);
+      }
+      .btn-confirm.disabled {
+        background: #475569;
+        color: #94a3b8;
+        cursor: not-allowed;
+        transform: none;
+      }
+    `}</style>
+  );
+}
+
+// ─── Export dengan Suspense wrapper (wajib karena useSearchParams) ────────────
 export default function PembayaranPage() {
   return (
     <Suspense
