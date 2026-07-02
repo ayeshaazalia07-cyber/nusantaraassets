@@ -252,7 +252,7 @@ function PaymentContent() {
     }
   };
 
-  // ── Handle konfirmasi pembayaran (DIUBAH AGAR SUPPORT KERANJANG) ─────────
+  // ── Handle konfirmasi pembayaran (DIUBAH AGAR SUPPORT KERANJANG & REDIRECT KE /pesanan) ─────────
   const handleKonfirmasi = async () => {
     const productIdParam = searchParams.get("id");
     const savedCart = JSON.parse(localStorage.getItem("nusantaraCart") || "[]");
@@ -328,13 +328,9 @@ function PaymentContent() {
       const customerId =
         localStorage.getItem("userId") || localStorage.getItem("userUid") || "";
 
-      // ==========================================
-      // KODE BARU: LOGIKA PISAH PRODUK KERANJANG
-      // ==========================================
       let ordersToInsert = [];
 
       if (productIdParam) {
-        // 1. Jika Beli Langsung (1 Produk)
         ordersToInsert.push({
           customer_id: customerId,
           product_id: parseInt(productIdParam),
@@ -343,23 +339,20 @@ function PaymentContent() {
           status: "pending",
         });
       } else {
-        // 2. Jika Checkout dari Keranjang (Banyak Produk)
         ordersToInsert = savedCart.map((item: any) => ({
           customer_id: customerId,
-          product_id: parseInt(item.id || item.product_id), // Pastikan ID produk terekstrak
+          product_id: parseInt(item.id || item.product_id),
           metode_pembayaran: metode,
           bukti_transfer_url: filePath,
           status: "pending",
         }));
       }
 
-      // Tembakkan semua produk sekaligus ke database
       const { error: dbError } = await supabase
         .from("orders")
         .insert(ordersToInsert);
 
       if (dbError) throw dbError;
-      // ==========================================
 
       const emailParams = {
         from_name: localStorage.getItem("userName") || "Pembeli",
@@ -379,12 +372,13 @@ function PaymentContent() {
         process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY!,
       );
 
-      // 3. Hapus keranjang jika dari cart
+      // Hapus keranjang jika dari cart
       if (!productIdParam) {
         localStorage.removeItem("nusantaraCart");
         window.dispatchEvent(new Event("storage"));
       }
 
+      // ✅ MODIFIKASI: Arahkan ke /pesanan setelah sukses
       Swal.fire({
         title: "Berhasil!",
         text: "Silakan tunggu, tampilan akan berubah otomatis jika sudah dikonfirmasi admin.",
@@ -392,6 +386,8 @@ function PaymentContent() {
         confirmButtonColor: "#ffd700",
         background: "#1e293b",
         color: "#fff",
+      }).then(() => {
+        window.location.href = "/pesanan";
       });
     } catch (error: any) {
       console.error(error);

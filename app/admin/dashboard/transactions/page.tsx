@@ -15,11 +15,11 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Mail,
 } from "lucide-react";
 import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 
 /* ─── Types ─── */
-// ✅ Diubah: waiting_verification → pending
 type OrderStatus = "pending" | "approved" | "rejected";
 
 type Order = {
@@ -55,14 +55,12 @@ const card: React.CSSProperties = {
   borderRadius: "24px",
 };
 
-// ✅ Diubah: key waiting_verification → pending
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
   pending:  { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",   label: "Menunggu Verifikasi" },
   approved: { color: "#4ade80", bg: "rgba(74,222,128,0.1)",   label: "Disetujui"           },
   rejected: { color: "#f87171", bg: "rgba(248,113,113,0.1)", label: "Ditolak"             },
 };
 
-// ✅ Bucket sesuai payment page (upload ke bucket "pembayaran", path "bukti-bayar/xxx")
 const STORAGE_BUCKET = "pembayaran";
 
 const FILTER_STATUS = [
@@ -96,9 +94,21 @@ export default function TransactionsPage() {
 
   const [detailTarget, setDetailTarget] = useState<Order | null>(null);
 
-  // ✅ State untuk image preview di modal
   const [imgLoading, setImgLoading] = useState(false);
   const [imgError, setImgError] = useState(false);
+
+  // ✅ Toast notification state
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  // ✅ Loading state khusus approve/reject
+  const [actionLoading, setActionLoading] = useState<"approve" | "reject" | null>(null);
+
+  /* ─── Auto-hide toast ─── */
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   /* ─── Fetch dari Supabase ─── */
   const fetchOrders = useCallback(async () => {
@@ -128,8 +138,6 @@ export default function TransactionsPage() {
     }
 
     const mapped: Order[] = (data as unknown as OrderRow[]).map((row) => {
-      // ✅ Fix: path dari DB adalah "bukti-bayar/TRNSKSI-xxx.png"
-      // Bucket: "pembayaran", path di dalam bucket sudah include folder "bukti-bayar/"
       let buktiUrl: string | null = null;
       if (row.bukti_transfer_url) {
         if (row.bukti_transfer_url.startsWith("http")) {
@@ -183,35 +191,77 @@ export default function TransactionsPage() {
     }
   };
 
+  /* ─── Kirim email notifikasi via Resend ─── */
+  const sendApprovalEmail = async (orderId: string) => {
+    try {
+      const res = await fetch("/api/resend-notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        console.warn("⚠️ Email gagal terkirim:", err);
+        // Tidak throw — order tetap approved meski email gagal
+        return false;
+      }
+
+      console.log("✅ Email notifikasi approval terkirim");
+      return true;
+    } catch (err) {
+      console.warn("⚠️ Gagal panggil /api/resend-notify:", err);
+      return false;
+    }
+  };
+
   /* ─── Approve ─── */
   const handleApprove = async (o: Order) => {
+    setActionLoading("approve");
+
     const { error: updateError } = await supabase
       .from("orders")
       .update({ is_approved: true, status: "approved" })
       .eq("id", o.id);
 
     if (updateError) {
-      alert("Gagal menyetujui order: " + updateError.message);
+      setActionLoading(null);
+      setToast({ message: "Gagal menyetujui order: " + updateError.message, type: "error" });
       return;
     }
 
+    // Update state lokal
     setOrders((prev) =>
       prev.map((ord) =>
         ord.id === o.id ? { ...ord, is_approved: true, status: "approved" as OrderStatus } : ord
       )
     );
     setDetailTarget(null);
+
+    // Kirim email notifikasi
+    const emailSent = await sendApprovalEmail(o.id);
+
+    setActionLoading(null);
+
+    if (emailSent) {
+      setToast({ message: `✅ Order disetujui & email notifikasi terkirim ke ${o.customer_name ?? "pelanggan"}.`, type: "success" });
+    } else {
+      setToast({ message: `✅ Order disetujui. Email notifikasi gagal terkirim (cek log server).`, type: "success" });
+    }
   };
 
   /* ─── Reject ─── */
   const handleReject = async (o: Order) => {
+    setActionLoading("reject");
+
     const { error: updateError } = await supabase
       .from("orders")
       .update({ is_approved: false, status: "rejected" })
       .eq("id", o.id);
 
     if (updateError) {
-      alert("Gagal menolak order: " + updateError.message);
+      setActionLoading(null);
+      setToast({ message: "Gagal menolak order: " + updateError.message, type: "error" });
       return;
     }
 
@@ -221,6 +271,8 @@ export default function TransactionsPage() {
       )
     );
     setDetailTarget(null);
+    setActionLoading(null);
+    setToast({ message: `❌ Order #${shortId(o.id)} berhasil ditolak.`, type: "error" });
   };
 
   /* ─── Filter + Sort (client-side) ─── */
@@ -280,8 +332,56 @@ export default function TransactionsPage() {
           0%   { background-position: -400px 0; }
           100% { background-position: 400px 0; }
         }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateX(40px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
 
         * { box-sizing: border-box; }
+
+        /* ─── Toast ─── */
+        .trx-toast {
+          position: fixed;
+          top: 24px;
+          right: 24px;
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 20px;
+          border-radius: 14px;
+          font-size: 13px;
+          font-weight: 600;
+          font-family: 'Plus Jakarta Sans', Poppins, sans-serif;
+          box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+          animation: toastIn 0.3s cubic-bezier(0.16,1,0.3,1);
+          max-width: 400px;
+          min-width: 260px;
+          backdrop-filter: blur(12px);
+        }
+        .trx-toast.success {
+          background: rgba(15,23,42,0.95);
+          border: 1px solid rgba(74,222,128,0.3);
+          color: #4ade80;
+        }
+        .trx-toast.error {
+          background: rgba(15,23,42,0.95);
+          border: 1px solid rgba(248,113,113,0.3);
+          color: #f87171;
+        }
+        .trx-toast-close {
+          margin-left: auto;
+          background: none;
+          border: none;
+          color: inherit;
+          opacity: 0.6;
+          cursor: pointer;
+          padding: 2px;
+          display: flex;
+          align-items: center;
+          flex-shrink: 0;
+        }
+        .trx-toast-close:hover { opacity: 1; }
 
         .page-wrapper {
           display: flex; flex-direction: column; gap: 28px;
@@ -381,7 +481,6 @@ export default function TransactionsPage() {
         }
         .detail-row p { margin: 4px 0 0; color: #e2e8f0; font-size: 14px; font-weight: 600; }
 
-        /* ✅ Skeleton shimmer untuk gambar loading */
         .img-skeleton {
           width: 100%; height: 200px; border-radius: 12px;
           background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
@@ -390,12 +489,42 @@ export default function TransactionsPage() {
           margin-top: 8px;
         }
 
+        /* ─── Action buttons ─── */
+        .modal-action-approve {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: #4ade80; border: none; color: #0f172a;
+          font-size: 14px; font-weight: 800; font-family: inherit;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          box-shadow: 0 4px 14px rgba(74,222,128,0.3);
+          transition: opacity 0.2s, transform 0.2s;
+        }
+        .modal-action-approve:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .modal-action-approve:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .modal-action-reject {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: #ef4444; border: none; color: #fff;
+          font-size: 14px; font-weight: 800; font-family: inherit;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          box-shadow: 0 4px 14px rgba(239,68,68,0.3);
+          transition: opacity 0.2s, transform 0.2s;
+        }
+        .modal-action-reject:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .modal-action-reject:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .email-hint {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 11px; color: #475569; margin-top: 10px;
+          justify-content: center;
+        }
+
         @media (max-width: 1024px) { .col-id { display: none; } }
         @media (max-width: 768px) {
           .trx-header-bar { padding: 16px; }
           .trx-th { padding: 10px 12px; font-size: 9px; }
           .trx-td { padding: 12px 12px; }
           .col-date { display: none; }
+          .trx-toast { top: 12px; right: 12px; left: 12px; min-width: unset; max-width: unset; }
         }
         @media (max-width: 640px) {
           .col-product, .col-customer { display: none; }
@@ -403,19 +532,31 @@ export default function TransactionsPage() {
         }
       `}</style>
 
+      {/* ─── Toast ─── */}
+      {toast && (
+        <div className={`trx-toast ${toast.type}`}>
+          <span>{toast.message}</span>
+          <button className="trx-toast-close" onClick={() => setToast(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* ─── Detail Modal ─── */}
       {detailTarget && (
-        <div className="modal-overlay" onClick={() => setDetailTarget(null)}>
+        <div className="modal-overlay" onClick={() => { if (!actionLoading) setDetailTarget(null); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             {/* Close button */}
             <button
-              onClick={() => setDetailTarget(null)}
+              onClick={() => { if (!actionLoading) setDetailTarget(null); }}
+              disabled={!!actionLoading}
               style={{
                 position: "absolute", top: "20px", right: "20px",
                 background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
                 borderRadius: "10px", width: "32px", height: "32px",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer", color: "#64748b",
+                cursor: actionLoading ? "not-allowed" : "pointer", color: "#64748b",
+                opacity: actionLoading ? 0.4 : 1,
               }}
             >
               <X size={15} />
@@ -484,7 +625,7 @@ export default function TransactionsPage() {
                 </div>
               </div>
 
-              {/* ✅ Bukti Transfer dengan skeleton loading + error fallback */}
+              {/* Bukti Transfer */}
               <div>
                 <label style={{
                   fontSize: "10px", color: "#475569", textTransform: "uppercase",
@@ -559,33 +700,49 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            {/* ✅ Action buttons: muncul untuk status "pending" */}
+            {/* ─── Action buttons: muncul untuk status "pending" ─── */}
             {detailTarget.status === "pending" && (
-              <div style={{ display: "flex", gap: "10px", marginTop: "28px" }}>
-                <button
-                  onClick={() => handleApprove(detailTarget)}
-                  style={{
-                    flex: 1, height: "44px", borderRadius: "12px", cursor: "pointer",
-                    background: "#4ade80", border: "none", color: "#0f172a",
-                    fontSize: "14px", fontWeight: 800, fontFamily: "inherit",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                    boxShadow: "0 4px 14px rgba(74,222,128,0.3)",
-                  }}
-                >
-                  <CheckCircle size={16} /> Setujui
-                </button>
-                <button
-                  onClick={() => handleReject(detailTarget)}
-                  style={{
-                    flex: 1, height: "44px", borderRadius: "12px", cursor: "pointer",
-                    background: "#ef4444", border: "none", color: "#fff",
-                    fontSize: "14px", fontWeight: 800, fontFamily: "inherit",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                    boxShadow: "0 4px 14px rgba(239,68,68,0.3)",
-                  }}
-                >
-                  <XCircle size={16} /> Tolak
-                </button>
+              <div style={{ marginTop: "28px" }}>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    className="modal-action-approve"
+                    onClick={() => handleApprove(detailTarget)}
+                    disabled={!!actionLoading}
+                  >
+                    {actionLoading === "approve" ? (
+                      <>
+                        <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                        Menyetujui...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle size={16} /> Setujui
+                      </>
+                    )}
+                  </button>
+                  <button
+                    className="modal-action-reject"
+                    onClick={() => handleReject(detailTarget)}
+                    disabled={!!actionLoading}
+                  >
+                    {actionLoading === "reject" ? (
+                      <>
+                        <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                        Menolak...
+                      </>
+                    ) : (
+                      <>
+                        <XCircle size={16} /> Tolak
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Hint email */}
+                <div className="email-hint">
+                  <Mail size={11} />
+                  <span>Email notifikasi otomatis dikirim ke pelanggan saat disetujui</span>
+                </div>
               </div>
             )}
 
