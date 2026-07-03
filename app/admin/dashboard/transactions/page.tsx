@@ -1,4 +1,3 @@
-// app/admin/dashboard/transactions/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -16,6 +15,7 @@ import {
   ArrowUp,
   ArrowDown,
   Mail,
+  FileText,
 } from "lucide-react";
 import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 
@@ -33,6 +33,7 @@ type Order = {
   status: OrderStatus;
   customer_name?: string;
   product_name?: string;
+  notes?: string | null;
 };
 
 type OrderRow = {
@@ -44,6 +45,7 @@ type OrderRow = {
   bukti_transfer_url: string | null;
   is_approved: boolean | null;
   status: string | null;
+  notes: string | null;
   customers: { full_name: string | null } | null;
   product: { nama: string | null } | null;
 };
@@ -97,11 +99,12 @@ export default function TransactionsPage() {
   const [imgLoading, setImgLoading] = useState(false);
   const [imgError, setImgError] = useState(false);
 
-  // ✅ Toast notification state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  // ✅ Loading state khusus approve/reject
   const [actionLoading, setActionLoading] = useState<"approve" | "reject" | null>(null);
+
+  const [rejectReason, setRejectReason] = useState("");
+  const [showRejectInput, setShowRejectInput] = useState(false);
 
   /* ─── Auto-hide toast ─── */
   useEffect(() => {
@@ -126,6 +129,7 @@ export default function TransactionsPage() {
         bukti_transfer_url,
         is_approved,
         status,
+        notes,
         customers ( full_name ),
         product ( nama )
       `)
@@ -161,6 +165,7 @@ export default function TransactionsPage() {
         status: (row.status as OrderStatus) ?? "pending",
         customer_name: row.customers?.full_name ?? undefined,
         product_name: row.product?.nama ?? undefined,
+        notes: row.notes,
       };
     });
 
@@ -191,7 +196,7 @@ export default function TransactionsPage() {
     }
   };
 
-  /* ─── Kirim email notifikasi via Resend ─── */
+  /* ─── Kirim email notifikasi approval ─── */
   const sendApprovalEmail = async (orderId: string) => {
     try {
       const res = await fetch("/api/resend-notify", {
@@ -203,7 +208,6 @@ export default function TransactionsPage() {
       if (!res.ok) {
         const err = await res.json();
         console.warn("⚠️ Email gagal terkirim:", err);
-        // Tidak throw — order tetap approved meski email gagal
         return false;
       }
 
@@ -211,6 +215,29 @@ export default function TransactionsPage() {
       return true;
     } catch (err) {
       console.warn("⚠️ Gagal panggil /api/resend-notify:", err);
+      return false;
+    }
+  };
+
+  /* ─── Kirim email penolakan ─── */
+  const sendRejectionEmail = async (orderId: string, reason: string) => {
+    try {
+      const res = await fetch("/api/resend-reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, reason }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        console.warn("⚠️ Email penolakan gagal terkirim:", err);
+        return false;
+      }
+
+      console.log("✅ Email penolakan terkirim");
+      return true;
+    } catch (err) {
+      console.warn("⚠️ Gagal panggil /api/resend-reject:", err);
       return false;
     }
   };
@@ -230,17 +257,16 @@ export default function TransactionsPage() {
       return;
     }
 
-    // Update state lokal
     setOrders((prev) =>
       prev.map((ord) =>
         ord.id === o.id ? { ...ord, is_approved: true, status: "approved" as OrderStatus } : ord
       )
     );
     setDetailTarget(null);
+    setShowRejectInput(false);
+    setRejectReason("");
 
-    // Kirim email notifikasi
     const emailSent = await sendApprovalEmail(o.id);
-
     setActionLoading(null);
 
     if (emailSent) {
@@ -251,12 +277,12 @@ export default function TransactionsPage() {
   };
 
   /* ─── Reject ─── */
-  const handleReject = async (o: Order) => {
+  const handleReject = async (o: Order, reason: string) => {
     setActionLoading("reject");
 
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ is_approved: false, status: "rejected" })
+      .update({ is_approved: false, status: "rejected", notes: reason })
       .eq("id", o.id);
 
     if (updateError) {
@@ -267,15 +293,45 @@ export default function TransactionsPage() {
 
     setOrders((prev) =>
       prev.map((ord) =>
-        ord.id === o.id ? { ...ord, is_approved: false, status: "rejected" as OrderStatus } : ord
+        ord.id === o.id
+          ? { ...ord, is_approved: false, status: "rejected" as OrderStatus, notes: reason }
+          : ord
       )
     );
     setDetailTarget(null);
+    setShowRejectInput(false);
+    setRejectReason("");
+
+    // Kirim email penolakan
+    const emailSent = await sendRejectionEmail(o.id, reason);
     setActionLoading(null);
-    setToast({ message: `❌ Order #${shortId(o.id)} berhasil ditolak.`, type: "error" });
+
+    if (emailSent) {
+      setToast({
+        message: `❌ Order #${shortId(o.id)} ditolak. Email notifikasi telah dikirim ke ${o.customer_name ?? "pelanggan"}.`,
+        type: "error",
+      });
+    } else {
+      setToast({
+        message: `❌ Order #${shortId(o.id)} ditolak. Email notifikasi gagal terkirim (cek log server).`,
+        type: "error",
+      });
+    }
   };
 
-  /* ─── Filter + Sort (client-side) ─── */
+  /* ─── Handler untuk membuka input alasan ─── */
+  const handleRejectClick = () => {
+    setShowRejectInput(true);
+    setRejectReason("");
+  };
+
+  /* ─── Handler untuk batal input alasan ─── */
+  const handleCancelReject = () => {
+    setShowRejectInput(false);
+    setRejectReason("");
+  };
+
+  /* ─── Filter + Sort ─── */
   const filtered = orders
     .filter((o) => {
       const q = search.toLowerCase();
@@ -316,7 +372,6 @@ export default function TransactionsPage() {
 
   return (
     <>
-      {/* CSS */}
       <style>{`
         @keyframes fadeSlideUp {
           from { opacity: 0; transform: translateY(16px); }
@@ -339,7 +394,6 @@ export default function TransactionsPage() {
 
         * { box-sizing: border-box; }
 
-        /* ─── Toast ─── */
         .trx-toast {
           position: fixed;
           top: 24px;
@@ -489,7 +543,6 @@ export default function TransactionsPage() {
           margin-top: 8px;
         }
 
-        /* ─── Action buttons ─── */
         .modal-action-approve {
           flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
           background: #4ade80; border: none; color: #0f172a;
@@ -512,10 +565,65 @@ export default function TransactionsPage() {
         .modal-action-reject:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
         .modal-action-reject:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+        .modal-action-cancel {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+          color: #94a3b8; font-size: 14px; font-weight: 700; font-family: inherit;
+          transition: background 0.2s;
+        }
+        .modal-action-cancel:hover { background: rgba(255,255,255,0.1); }
+
+        .modal-action-confirm-reject {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: #ef4444; border: none; color: #fff;
+          font-size: 14px; font-weight: 800; font-family: inherit;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          box-shadow: 0 4px 14px rgba(239,68,68,0.3);
+          transition: opacity 0.2s, transform 0.2s;
+        }
+        .modal-action-confirm-reject:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .modal-action-confirm-reject:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .reject-textarea {
+          width: 100%;
+          min-height: 80px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 12px;
+          padding: 12px 14px;
+          color: #e2e8f0;
+          font-size: 14px;
+          font-family: inherit;
+          resize: vertical;
+          outline: none;
+          transition: border-color 0.2s;
+        }
+        .reject-textarea:focus {
+          border-color: rgba(239,68,68,0.5);
+        }
+        .reject-textarea::placeholder {
+          color: #475569;
+        }
+
         .email-hint {
           display: flex; align-items: center; gap: 6px;
           font-size: 11px; color: #475569; margin-top: 10px;
           justify-content: center;
+        }
+
+        .notes-box {
+          background: rgba(255,255,255,0.04);
+          border-left: 3px solid #f87171;
+          padding: 10px 14px;
+          border-radius: 8px;
+          margin-top: 6px;
+        }
+        .notes-box p {
+          color: #e2e8f0;
+          font-size: 13px;
+          margin: 0;
+          font-weight: 400;
+          white-space: pre-wrap;
         }
 
         @media (max-width: 1024px) { .col-id { display: none; } }
@@ -544,11 +652,21 @@ export default function TransactionsPage() {
 
       {/* ─── Detail Modal ─── */}
       {detailTarget && (
-        <div className="modal-overlay" onClick={() => { if (!actionLoading) setDetailTarget(null); }}>
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            if (!actionLoading && !showRejectInput) setDetailTarget(null);
+          }}
+        >
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            {/* Close button */}
             <button
-              onClick={() => { if (!actionLoading) setDetailTarget(null); }}
+              onClick={() => {
+                if (!actionLoading) {
+                  setDetailTarget(null);
+                  setShowRejectInput(false);
+                  setRejectReason("");
+                }
+              }}
               disabled={!!actionLoading}
               style={{
                 position: "absolute", top: "20px", right: "20px",
@@ -625,7 +743,21 @@ export default function TransactionsPage() {
                 </div>
               </div>
 
-              {/* Bukti Transfer */}
+              {detailTarget.notes && (
+                <div>
+                  <label style={{
+                    fontSize: "10px", color: "#475569", textTransform: "uppercase",
+                    letterSpacing: "1px", fontWeight: 700,
+                  }}>
+                    <FileText size={12} style={{ display: "inline", marginRight: "4px" }} />
+                    Catatan Admin
+                  </label>
+                  <div className="notes-box">
+                    <p>{detailTarget.notes}</p>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label style={{
                   fontSize: "10px", color: "#475569", textTransform: "uppercase",
@@ -700,56 +832,111 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            {/* ─── Action buttons: muncul untuk status "pending" ─── */}
+            {/* ─── Action buttons ─── */}
             {detailTarget.status === "pending" && (
               <div style={{ marginTop: "28px" }}>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <button
-                    className="modal-action-approve"
-                    onClick={() => handleApprove(detailTarget)}
-                    disabled={!!actionLoading}
-                  >
-                    {actionLoading === "approve" ? (
-                      <>
-                        <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
-                        Menyetujui...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle size={16} /> Setujui
-                      </>
-                    )}
-                  </button>
-                  <button
-                    className="modal-action-reject"
-                    onClick={() => handleReject(detailTarget)}
-                    disabled={!!actionLoading}
-                  >
-                    {actionLoading === "reject" ? (
-                      <>
-                        <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
-                        Menolak...
-                      </>
-                    ) : (
-                      <>
-                        <XCircle size={16} /> Tolak
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Hint email */}
-                <div className="email-hint">
-                  <Mail size={11} />
-                  <span>Email notifikasi otomatis dikirim ke pelanggan saat disetujui</span>
-                </div>
+                {!showRejectInput ? (
+                  <>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        className="modal-action-approve"
+                        onClick={() => handleApprove(detailTarget)}
+                        disabled={!!actionLoading}
+                      >
+                        {actionLoading === "approve" ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                            Menyetujui...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle size={16} /> Setujui
+                          </>
+                        )}
+                      </button>
+                      <button
+                        className="modal-action-reject"
+                        onClick={handleRejectClick}
+                        disabled={!!actionLoading}
+                      >
+                        {actionLoading === "reject" ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                            Menolak...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={16} /> Tolak
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="email-hint">
+                      <Mail size={11} />
+                      <span>Email notifikasi otomatis dikirim ke pelanggan saat disetujui</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    <div>
+                      <label style={{
+                        fontSize: "12px", color: "#94a3b8", fontWeight: 700,
+                        display: "block", marginBottom: "6px",
+                      }}>
+                        Alasan Penolakan <span style={{ color: "#ef4444" }}>*</span>
+                      </label>
+                      <textarea
+                        className="reject-textarea"
+                        placeholder="Contoh: Bukti transfer tidak jelas, nominal kurang, dll."
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        disabled={!!actionLoading}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        className="modal-action-cancel"
+                        onClick={handleCancelReject}
+                        disabled={!!actionLoading}
+                      >
+                        Batal
+                      </button>
+                      <button
+                        className="modal-action-confirm-reject"
+                        onClick={() => {
+                          if (rejectReason.trim() === "") {
+                            alert("Alasan penolakan tidak boleh kosong.");
+                            return;
+                          }
+                          handleReject(detailTarget, rejectReason.trim());
+                        }}
+                        disabled={!!actionLoading}
+                      >
+                        {actionLoading === "reject" ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                            Menolak...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={16} /> Konfirmasi Tolak
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {detailTarget.status !== "pending" && (
               <div style={{ marginTop: "28px" }}>
                 <button
-                  onClick={() => setDetailTarget(null)}
+                  onClick={() => {
+                    setDetailTarget(null);
+                    setShowRejectInput(false);
+                    setRejectReason("");
+                  }}
                   style={{
                     width: "100%", height: "44px", borderRadius: "12px", cursor: "pointer",
                     background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
@@ -768,7 +955,6 @@ export default function TransactionsPage() {
           MAIN CONTENT
       ───────────────────────────────────── */}
       <div className="page-wrapper">
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h1 style={{ fontSize: "28px", fontWeight: 800, color: "#fff", letterSpacing: "-0.5px", margin: 0 }}>
@@ -786,7 +972,6 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        {/* Error state */}
         {error && (
           <div style={{
             background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
@@ -796,7 +981,6 @@ export default function TransactionsPage() {
           </div>
         )}
 
-        {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "14px" }}>
           {[
             { label: "Total Order", value: orders.length,                                        color: "#ffd700" },
@@ -815,7 +999,6 @@ export default function TransactionsPage() {
           ))}
         </div>
 
-        {/* Table */}
         <div style={{ ...card, padding: 0, overflow: "hidden" }}>
           <div className="trx-header-bar">
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -889,7 +1072,6 @@ export default function TransactionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {/* Loading skeleton */}
                 {loading && (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={`skeleton-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
@@ -906,7 +1088,6 @@ export default function TransactionsPage() {
                   ))
                 )}
 
-                {/* Empty state */}
                 {!loading && filtered.length === 0 && (
                   <tr>
                     <td colSpan={8} style={{ padding: "56px 32px", textAlign: "center" }}>
@@ -920,7 +1101,6 @@ export default function TransactionsPage() {
                   </tr>
                 )}
 
-                {/* Data rows */}
                 {!loading && filtered.map((o, i) => {
                   const statusCfg = STATUS_CONFIG[o.status];
                   return (
@@ -991,6 +1171,8 @@ export default function TransactionsPage() {
                               setImgLoading(true);
                               setImgError(false);
                               setDetailTarget(o);
+                              setShowRejectInput(false);
+                              setRejectReason("");
                             }}
                           >
                             <Eye size={13} />
