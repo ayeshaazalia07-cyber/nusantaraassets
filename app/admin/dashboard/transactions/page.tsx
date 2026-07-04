@@ -1,4 +1,3 @@
-// app/admin/dashboard/transactions/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -15,11 +14,12 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Mail,
+  FileText,
 } from "lucide-react";
 import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 
 /* ─── Types ─── */
-// ✅ Diubah: waiting_verification → pending
 type OrderStatus = "pending" | "approved" | "rejected";
 
 type Order = {
@@ -33,6 +33,7 @@ type Order = {
   status: OrderStatus;
   customer_name?: string;
   product_name?: string;
+  notes?: string | null;
 };
 
 type OrderRow = {
@@ -44,6 +45,7 @@ type OrderRow = {
   bukti_transfer_url: string | null;
   is_approved: boolean | null;
   status: string | null;
+  notes: string | null;
   customers: { full_name: string | null } | null;
   product: { nama: string | null } | null;
 };
@@ -55,14 +57,12 @@ const card: React.CSSProperties = {
   borderRadius: "24px",
 };
 
-// ✅ Diubah: key waiting_verification → pending
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
   pending:  { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",   label: "Menunggu Verifikasi" },
   approved: { color: "#4ade80", bg: "rgba(74,222,128,0.1)",   label: "Disetujui"           },
   rejected: { color: "#f87171", bg: "rgba(248,113,113,0.1)", label: "Ditolak"             },
 };
 
-// ✅ Bucket sesuai payment page (upload ke bucket "pembayaran", path "bukti-bayar/xxx")
 const STORAGE_BUCKET = "pembayaran";
 
 const FILTER_STATUS = [
@@ -96,9 +96,22 @@ export default function TransactionsPage() {
 
   const [detailTarget, setDetailTarget] = useState<Order | null>(null);
 
-  // ✅ State untuk image preview di modal
   const [imgLoading, setImgLoading] = useState(false);
   const [imgError, setImgError] = useState(false);
+
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const [actionLoading, setActionLoading] = useState<"approve" | "reject" | null>(null);
+
+  const [rejectReason, setRejectReason] = useState("");
+  const [showRejectInput, setShowRejectInput] = useState(false);
+
+  /* ─── Auto-hide toast ─── */
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   /* ─── Fetch dari Supabase ─── */
   const fetchOrders = useCallback(async () => {
@@ -116,6 +129,7 @@ export default function TransactionsPage() {
         bukti_transfer_url,
         is_approved,
         status,
+        notes,
         customers ( full_name ),
         product ( nama )
       `)
@@ -128,8 +142,6 @@ export default function TransactionsPage() {
     }
 
     const mapped: Order[] = (data as unknown as OrderRow[]).map((row) => {
-      // ✅ Fix: path dari DB adalah "bukti-bayar/TRNSKSI-xxx.png"
-      // Bucket: "pembayaran", path di dalam bucket sudah include folder "bukti-bayar/"
       let buktiUrl: string | null = null;
       if (row.bukti_transfer_url) {
         if (row.bukti_transfer_url.startsWith("http")) {
@@ -153,6 +165,7 @@ export default function TransactionsPage() {
         status: (row.status as OrderStatus) ?? "pending",
         customer_name: row.customers?.full_name ?? undefined,
         product_name: row.product?.nama ?? undefined,
+        notes: row.notes,
       };
     });
 
@@ -183,15 +196,64 @@ export default function TransactionsPage() {
     }
   };
 
+  /* ─── Kirim email notifikasi approval ─── */
+  const sendApprovalEmail = async (orderId: string) => {
+    try {
+      const res = await fetch("/api/resend-notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        console.warn("⚠️ Email gagal terkirim:", err);
+        return false;
+      }
+
+      console.log("✅ Email notifikasi approval terkirim");
+      return true;
+    } catch (err) {
+      console.warn("⚠️ Gagal panggil /api/resend-notify:", err);
+      return false;
+    }
+  };
+
+  /* ─── Kirim email penolakan ─── */
+  const sendRejectionEmail = async (orderId: string, reason: string) => {
+    try {
+      const res = await fetch("/api/resend-reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, reason }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        console.warn("⚠️ Email penolakan gagal terkirim:", err);
+        return false;
+      }
+
+      console.log("✅ Email penolakan terkirim");
+      return true;
+    } catch (err) {
+      console.warn("⚠️ Gagal panggil /api/resend-reject:", err);
+      return false;
+    }
+  };
+
   /* ─── Approve ─── */
   const handleApprove = async (o: Order) => {
+    setActionLoading("approve");
+
     const { error: updateError } = await supabase
       .from("orders")
       .update({ is_approved: true, status: "approved" })
       .eq("id", o.id);
 
     if (updateError) {
-      alert("Gagal menyetujui order: " + updateError.message);
+      setActionLoading(null);
+      setToast({ message: "Gagal menyetujui order: " + updateError.message, type: "error" });
       return;
     }
 
@@ -201,29 +263,75 @@ export default function TransactionsPage() {
       )
     );
     setDetailTarget(null);
+    setShowRejectInput(false);
+    setRejectReason("");
+
+    const emailSent = await sendApprovalEmail(o.id);
+    setActionLoading(null);
+
+    if (emailSent) {
+      setToast({ message: `✅ Order disetujui & email notifikasi terkirim ke ${o.customer_name ?? "pelanggan"}.`, type: "success" });
+    } else {
+      setToast({ message: `✅ Order disetujui. Email notifikasi gagal terkirim (cek log server).`, type: "success" });
+    }
   };
 
   /* ─── Reject ─── */
-  const handleReject = async (o: Order) => {
+  const handleReject = async (o: Order, reason: string) => {
+    setActionLoading("reject");
+
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ is_approved: false, status: "rejected" })
+      .update({ is_approved: false, status: "rejected", notes: reason })
       .eq("id", o.id);
 
     if (updateError) {
-      alert("Gagal menolak order: " + updateError.message);
+      setActionLoading(null);
+      setToast({ message: "Gagal menolak order: " + updateError.message, type: "error" });
       return;
     }
 
     setOrders((prev) =>
       prev.map((ord) =>
-        ord.id === o.id ? { ...ord, is_approved: false, status: "rejected" as OrderStatus } : ord
+        ord.id === o.id
+          ? { ...ord, is_approved: false, status: "rejected" as OrderStatus, notes: reason }
+          : ord
       )
     );
     setDetailTarget(null);
+    setShowRejectInput(false);
+    setRejectReason("");
+
+    // Kirim email penolakan
+    const emailSent = await sendRejectionEmail(o.id, reason);
+    setActionLoading(null);
+
+    if (emailSent) {
+      setToast({
+        message: `❌ Order #${shortId(o.id)} ditolak. Email notifikasi telah dikirim ke ${o.customer_name ?? "pelanggan"}.`,
+        type: "error",
+      });
+    } else {
+      setToast({
+        message: `❌ Order #${shortId(o.id)} ditolak. Email notifikasi gagal terkirim (cek log server).`,
+        type: "error",
+      });
+    }
   };
 
-  /* ─── Filter + Sort (client-side) ─── */
+  /* ─── Handler untuk membuka input alasan ─── */
+  const handleRejectClick = () => {
+    setShowRejectInput(true);
+    setRejectReason("");
+  };
+
+  /* ─── Handler untuk batal input alasan ─── */
+  const handleCancelReject = () => {
+    setShowRejectInput(false);
+    setRejectReason("");
+  };
+
+  /* ─── Filter + Sort ─── */
   const filtered = orders
     .filter((o) => {
       const q = search.toLowerCase();
@@ -264,7 +372,6 @@ export default function TransactionsPage() {
 
   return (
     <>
-      {/* CSS */}
       <style>{`
         @keyframes fadeSlideUp {
           from { opacity: 0; transform: translateY(16px); }
@@ -280,8 +387,55 @@ export default function TransactionsPage() {
           0%   { background-position: -400px 0; }
           100% { background-position: 400px 0; }
         }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateX(40px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
 
         * { box-sizing: border-box; }
+
+        .trx-toast {
+          position: fixed;
+          top: 24px;
+          right: 24px;
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 20px;
+          border-radius: 14px;
+          font-size: 13px;
+          font-weight: 600;
+          font-family: 'Plus Jakarta Sans', Poppins, sans-serif;
+          box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+          animation: toastIn 0.3s cubic-bezier(0.16,1,0.3,1);
+          max-width: 400px;
+          min-width: 260px;
+          backdrop-filter: blur(12px);
+        }
+        .trx-toast.success {
+          background: rgba(15,23,42,0.95);
+          border: 1px solid rgba(74,222,128,0.3);
+          color: #4ade80;
+        }
+        .trx-toast.error {
+          background: rgba(15,23,42,0.95);
+          border: 1px solid rgba(248,113,113,0.3);
+          color: #f87171;
+        }
+        .trx-toast-close {
+          margin-left: auto;
+          background: none;
+          border: none;
+          color: inherit;
+          opacity: 0.6;
+          cursor: pointer;
+          padding: 2px;
+          display: flex;
+          align-items: center;
+          flex-shrink: 0;
+        }
+        .trx-toast-close:hover { opacity: 1; }
 
         .page-wrapper {
           display: flex; flex-direction: column; gap: 28px;
@@ -381,7 +535,6 @@ export default function TransactionsPage() {
         }
         .detail-row p { margin: 4px 0 0; color: #e2e8f0; font-size: 14px; font-weight: 600; }
 
-        /* ✅ Skeleton shimmer untuk gambar loading */
         .img-skeleton {
           width: 100%; height: 200px; border-radius: 12px;
           background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
@@ -390,12 +543,96 @@ export default function TransactionsPage() {
           margin-top: 8px;
         }
 
+        .modal-action-approve {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: #4ade80; border: none; color: #0f172a;
+          font-size: 14px; font-weight: 800; font-family: inherit;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          box-shadow: 0 4px 14px rgba(74,222,128,0.3);
+          transition: opacity 0.2s, transform 0.2s;
+        }
+        .modal-action-approve:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .modal-action-approve:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .modal-action-reject {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: #ef4444; border: none; color: #fff;
+          font-size: 14px; font-weight: 800; font-family: inherit;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          box-shadow: 0 4px 14px rgba(239,68,68,0.3);
+          transition: opacity 0.2s, transform 0.2s;
+        }
+        .modal-action-reject:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .modal-action-reject:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .modal-action-cancel {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+          color: #94a3b8; font-size: 14px; font-weight: 700; font-family: inherit;
+          transition: background 0.2s;
+        }
+        .modal-action-cancel:hover { background: rgba(255,255,255,0.1); }
+
+        .modal-action-confirm-reject {
+          flex: 1; height: 44px; border-radius: 12px; cursor: pointer;
+          background: #ef4444; border: none; color: #fff;
+          font-size: 14px; font-weight: 800; font-family: inherit;
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          box-shadow: 0 4px 14px rgba(239,68,68,0.3);
+          transition: opacity 0.2s, transform 0.2s;
+        }
+        .modal-action-confirm-reject:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .modal-action-confirm-reject:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .reject-textarea {
+          width: 100%;
+          min-height: 80px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 12px;
+          padding: 12px 14px;
+          color: #e2e8f0;
+          font-size: 14px;
+          font-family: inherit;
+          resize: vertical;
+          outline: none;
+          transition: border-color 0.2s;
+        }
+        .reject-textarea:focus {
+          border-color: rgba(239,68,68,0.5);
+        }
+        .reject-textarea::placeholder {
+          color: #475569;
+        }
+
+        .email-hint {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 11px; color: #475569; margin-top: 10px;
+          justify-content: center;
+        }
+
+        .notes-box {
+          background: rgba(255,255,255,0.04);
+          border-left: 3px solid #f87171;
+          padding: 10px 14px;
+          border-radius: 8px;
+          margin-top: 6px;
+        }
+        .notes-box p {
+          color: #e2e8f0;
+          font-size: 13px;
+          margin: 0;
+          font-weight: 400;
+          white-space: pre-wrap;
+        }
+
         @media (max-width: 1024px) { .col-id { display: none; } }
         @media (max-width: 768px) {
           .trx-header-bar { padding: 16px; }
           .trx-th { padding: 10px 12px; font-size: 9px; }
           .trx-td { padding: 12px 12px; }
           .col-date { display: none; }
+          .trx-toast { top: 12px; right: 12px; left: 12px; min-width: unset; max-width: unset; }
         }
         @media (max-width: 640px) {
           .col-product, .col-customer { display: none; }
@@ -403,19 +640,41 @@ export default function TransactionsPage() {
         }
       `}</style>
 
+      {/* ─── Toast ─── */}
+      {toast && (
+        <div className={`trx-toast ${toast.type}`}>
+          <span>{toast.message}</span>
+          <button className="trx-toast-close" onClick={() => setToast(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* ─── Detail Modal ─── */}
       {detailTarget && (
-        <div className="modal-overlay" onClick={() => setDetailTarget(null)}>
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            if (!actionLoading && !showRejectInput) setDetailTarget(null);
+          }}
+        >
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            {/* Close button */}
             <button
-              onClick={() => setDetailTarget(null)}
+              onClick={() => {
+                if (!actionLoading) {
+                  setDetailTarget(null);
+                  setShowRejectInput(false);
+                  setRejectReason("");
+                }
+              }}
+              disabled={!!actionLoading}
               style={{
                 position: "absolute", top: "20px", right: "20px",
                 background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
                 borderRadius: "10px", width: "32px", height: "32px",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer", color: "#64748b",
+                cursor: actionLoading ? "not-allowed" : "pointer", color: "#64748b",
+                opacity: actionLoading ? 0.4 : 1,
               }}
             >
               <X size={15} />
@@ -484,7 +743,21 @@ export default function TransactionsPage() {
                 </div>
               </div>
 
-              {/* ✅ Bukti Transfer dengan skeleton loading + error fallback */}
+              {detailTarget.notes && (
+                <div>
+                  <label style={{
+                    fontSize: "10px", color: "#475569", textTransform: "uppercase",
+                    letterSpacing: "1px", fontWeight: 700,
+                  }}>
+                    <FileText size={12} style={{ display: "inline", marginRight: "4px" }} />
+                    Catatan Admin
+                  </label>
+                  <div className="notes-box">
+                    <p>{detailTarget.notes}</p>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label style={{
                   fontSize: "10px", color: "#475569", textTransform: "uppercase",
@@ -559,40 +832,111 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            {/* ✅ Action buttons: muncul untuk status "pending" */}
+            {/* ─── Action buttons ─── */}
             {detailTarget.status === "pending" && (
-              <div style={{ display: "flex", gap: "10px", marginTop: "28px" }}>
-                <button
-                  onClick={() => handleApprove(detailTarget)}
-                  style={{
-                    flex: 1, height: "44px", borderRadius: "12px", cursor: "pointer",
-                    background: "#4ade80", border: "none", color: "#0f172a",
-                    fontSize: "14px", fontWeight: 800, fontFamily: "inherit",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                    boxShadow: "0 4px 14px rgba(74,222,128,0.3)",
-                  }}
-                >
-                  <CheckCircle size={16} /> Setujui
-                </button>
-                <button
-                  onClick={() => handleReject(detailTarget)}
-                  style={{
-                    flex: 1, height: "44px", borderRadius: "12px", cursor: "pointer",
-                    background: "#ef4444", border: "none", color: "#fff",
-                    fontSize: "14px", fontWeight: 800, fontFamily: "inherit",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                    boxShadow: "0 4px 14px rgba(239,68,68,0.3)",
-                  }}
-                >
-                  <XCircle size={16} /> Tolak
-                </button>
+              <div style={{ marginTop: "28px" }}>
+                {!showRejectInput ? (
+                  <>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        className="modal-action-approve"
+                        onClick={() => handleApprove(detailTarget)}
+                        disabled={!!actionLoading}
+                      >
+                        {actionLoading === "approve" ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                            Menyetujui...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle size={16} /> Setujui
+                          </>
+                        )}
+                      </button>
+                      <button
+                        className="modal-action-reject"
+                        onClick={handleRejectClick}
+                        disabled={!!actionLoading}
+                      >
+                        {actionLoading === "reject" ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                            Menolak...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={16} /> Tolak
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="email-hint">
+                      <Mail size={11} />
+                      <span>Email notifikasi otomatis dikirim ke pelanggan saat disetujui</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    <div>
+                      <label style={{
+                        fontSize: "12px", color: "#94a3b8", fontWeight: 700,
+                        display: "block", marginBottom: "6px",
+                      }}>
+                        Alasan Penolakan <span style={{ color: "#ef4444" }}>*</span>
+                      </label>
+                      <textarea
+                        className="reject-textarea"
+                        placeholder="Contoh: Bukti transfer tidak jelas, nominal kurang, dll."
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        disabled={!!actionLoading}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        className="modal-action-cancel"
+                        onClick={handleCancelReject}
+                        disabled={!!actionLoading}
+                      >
+                        Batal
+                      </button>
+                      <button
+                        className="modal-action-confirm-reject"
+                        onClick={() => {
+                          if (rejectReason.trim() === "") {
+                            alert("Alasan penolakan tidak boleh kosong.");
+                            return;
+                          }
+                          handleReject(detailTarget, rejectReason.trim());
+                        }}
+                        disabled={!!actionLoading}
+                      >
+                        {actionLoading === "reject" ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} />
+                            Menolak...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={16} /> Konfirmasi Tolak
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {detailTarget.status !== "pending" && (
               <div style={{ marginTop: "28px" }}>
                 <button
-                  onClick={() => setDetailTarget(null)}
+                  onClick={() => {
+                    setDetailTarget(null);
+                    setShowRejectInput(false);
+                    setRejectReason("");
+                  }}
                   style={{
                     width: "100%", height: "44px", borderRadius: "12px", cursor: "pointer",
                     background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
@@ -611,7 +955,6 @@ export default function TransactionsPage() {
           MAIN CONTENT
       ───────────────────────────────────── */}
       <div className="page-wrapper">
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h1 style={{ fontSize: "28px", fontWeight: 800, color: "#fff", letterSpacing: "-0.5px", margin: 0 }}>
@@ -629,7 +972,6 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        {/* Error state */}
         {error && (
           <div style={{
             background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
@@ -639,7 +981,6 @@ export default function TransactionsPage() {
           </div>
         )}
 
-        {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "14px" }}>
           {[
             { label: "Total Order", value: orders.length,                                        color: "#ffd700" },
@@ -658,7 +999,6 @@ export default function TransactionsPage() {
           ))}
         </div>
 
-        {/* Table */}
         <div style={{ ...card, padding: 0, overflow: "hidden" }}>
           <div className="trx-header-bar">
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -732,7 +1072,6 @@ export default function TransactionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {/* Loading skeleton */}
                 {loading && (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={`skeleton-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
@@ -749,7 +1088,6 @@ export default function TransactionsPage() {
                   ))
                 )}
 
-                {/* Empty state */}
                 {!loading && filtered.length === 0 && (
                   <tr>
                     <td colSpan={8} style={{ padding: "56px 32px", textAlign: "center" }}>
@@ -763,7 +1101,6 @@ export default function TransactionsPage() {
                   </tr>
                 )}
 
-                {/* Data rows */}
                 {!loading && filtered.map((o, i) => {
                   const statusCfg = STATUS_CONFIG[o.status];
                   return (
@@ -834,6 +1171,8 @@ export default function TransactionsPage() {
                               setImgLoading(true);
                               setImgError(false);
                               setDetailTarget(o);
+                              setShowRejectInput(false);
+                              setRejectReason("");
                             }}
                           >
                             <Eye size={13} />
