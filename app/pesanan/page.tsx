@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Navbar from "@/app/components/Navbar";
 import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 import {
@@ -14,6 +15,7 @@ import {
   CircleDollarSign,
   Loader2,
   X,
+  RotateCcw,
 } from "lucide-react";
 
 /* ─── Types ─── */
@@ -32,7 +34,8 @@ interface Pesanan {
   metode_pembayaran: string;
   status: string;
   is_approved: boolean;
-  first_downloaded_at: string | null; // dari server
+  first_downloaded_at: string | null;
+  notes?: string | null; // Rejection notes from admin
   produk?: Produk | null;
 }
 
@@ -55,10 +58,11 @@ const getDisplayStatus = (
   return "pending";
 };
 
-/* ─── Konstanta durasi unduh (server harus pakai nilai yang sama) ─── */
-const DOWNLOAD_DURATION_MS = 10_800_000; // testing 1 menit, produksi 3 jam: 10_800_000
+/* ─── Konstanta durasi unduh ─── */
+const DOWNLOAD_DURATION_MS = 10_800_000; // 3 jam
 
 export default function PesananPage() {
+  const router = useRouter();
   const [pesananList, setPesananList] = useState<Pesanan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +71,10 @@ export default function PesananPage() {
 
   // UI
   const [confirmModal, setConfirmModal] = useState<Pesanan | null>(null);
+  const [rejectionModal, setRejectionModal] = useState<{
+    pesanan: Pesanan;
+    notes: string | null;
+  } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Update current time setiap 1 detik untuk countdown realtime
@@ -82,7 +90,7 @@ export default function PesananPage() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // Ambil data pesanan (termasuk first_downloaded_at)
+  // Ambil data pesanan
   useEffect(() => {
     const fetchPesanan = async () => {
       try {
@@ -135,6 +143,7 @@ export default function PesananPage() {
           status: order.status || "pending",
           is_approved: order.is_approved || false,
           first_downloaded_at: order.first_downloaded_at || null,
+          notes: order.notes || null,
           produk: produkMap[order.product_id] || null,
         }));
 
@@ -163,7 +172,7 @@ export default function PesananPage() {
     [],
   );
 
-  // Eksekusi download (memanggil API, server yang mencatat first_downloaded_at)
+  // Eksekusi download
   const executeDownload = async (pesanan: Pesanan) => {
     const userId = localStorage.getItem("userId");
     if (!userId) {
@@ -181,7 +190,6 @@ export default function PesananPage() {
 
       if (!response.ok) {
         if (response.status === 410 || response.status === 403) {
-          // Server mengatakan sudah kadaluarsa
           updatePesanan(orderId, { first_downloaded_at: "expired" });
           throw new Error("Link download sudah kadaluarsa.");
         }
@@ -193,21 +201,16 @@ export default function PesananPage() {
         throw new Error(errorMessage);
       }
 
-      // BACA BLOB DULU (body hanya bisa dibaca sekali)
       const blob = await response.blob();
-
-      // Ambil timestamp dari header (tanpa membaca body lagi)
       const serverTimestamp = response.headers.get("X-First-Downloaded-At");
       if (serverTimestamp) {
         updatePesanan(orderId, { first_downloaded_at: serverTimestamp });
       } else {
-        // fallback jika header tidak ada (tetap bisa digunakan)
         updatePesanan(orderId, {
           first_downloaded_at: new Date().toISOString(),
         });
       }
 
-      // Buat link unduhan
       const downloadUrl = URL.createObjectURL(blob);
       let filename = "";
       const disposition = response.headers.get("Content-Disposition");
@@ -254,13 +257,11 @@ export default function PesananPage() {
     const statusDisplay = getDisplayStatus(pesanan);
     if (statusDisplay !== "approved") return;
 
-    // Jika belum pernah download (first_downloaded_at null) → tampilkan modal
     if (!pesanan.first_downloaded_at) {
       setConfirmModal(pesanan);
       return;
     }
 
-    // Sudah pernah download: cek masa berlaku
     const firstTime = new Date(pesanan.first_downloaded_at).getTime();
     const elapsed = currentTime - firstTime;
     if (elapsed >= DOWNLOAD_DURATION_MS) {
@@ -268,7 +269,6 @@ export default function PesananPage() {
       return;
     }
 
-    // Masih berlaku → langsung download
     executeDownload(pesanan);
   };
 
@@ -277,6 +277,18 @@ export default function PesananPage() {
       executeDownload(confirmModal);
       setConfirmModal(null);
     }
+  };
+
+  // Handler reorder
+  const handleReorder = (pesanan: Pesanan) => {
+    const prod = pesanan.produk;
+    if (!prod) {
+      setToastMessage("Data produk tidak ditemukan.");
+      return;
+    }
+
+    const detailUrl = `/detail-produk?id=${encodeURIComponent(prod.id)}&nama=${encodeURIComponent(prod.name)}&harga=${encodeURIComponent(prod.harga?.toString() || "")}&img=${encodeURIComponent(prod.gambar_url || "")}`;
+    router.push(detailUrl);
   };
 
   /* ─── Render ─── */
@@ -293,13 +305,14 @@ export default function PesananPage() {
         </div>
       )}
 
+      {/* Modal: Konfirmasi download pertama kali */}
       {confirmModal && (
         <div className="modal-overlay" onClick={() => setConfirmModal(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Konfirmasi Download</h3>
             <p>
               File aset hanya dapat diunduh dalam waktu{" "}
-              <strong>3 jam</strong>. Setelah itu, File tidak dapat diunduh kembali.
+              <strong>3 jam</strong>. Setelah itu, File tidak dapat diunduh kembali,
               silakan lakukan reorder. Terima kasih.
             </p>
             <div className="modal-actions">
@@ -311,6 +324,41 @@ export default function PesananPage() {
               </button>
               <button className="btn-primary" onClick={confirmDownload}>
                 <Download size={16} /> Unduh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Lihat alasan penolakan */}
+      {rejectionModal && (
+        <div className="modal-overlay" onClick={() => setRejectionModal(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Alasan Penolakan</h3>
+            <div className="rejection-notes">
+              {rejectionModal.notes ? (
+                <p>{rejectionModal.notes}</p>
+              ) : (
+                <p style={{ color: "#94a3b8" }}>
+                  Tidak ada catatan dari admin.
+                </p>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn-secondary"
+                onClick={() => setRejectionModal(null)}
+              >
+                Tutup
+              </button>
+              <button
+                className="btn-reorder"
+                onClick={() => {
+                  setRejectionModal(null);
+                  handleReorder(rejectionModal.pesanan);
+                }}
+              >
+                <RotateCcw size={16} /> Pesan Ulang
               </button>
             </div>
           </div>
@@ -361,9 +409,10 @@ export default function PesananPage() {
               const transactionCode = pesanan.id.slice(0, 8).toUpperCase();
               const statusDisplay = getDisplayStatus(pesanan);
               const isApproved = statusDisplay === "approved";
+              const isRejected = statusDisplay === "declined";
               const isDownloading = downloadingId === pesanan.id;
 
-              // Hitung sisa waktu berdasarkan first_downloaded_at
+              // Hitung sisa waktu
               let remainingText: string | null = null;
               let downloadExpired = false;
               if (isApproved && pesanan.first_downloaded_at) {
@@ -381,20 +430,20 @@ export default function PesananPage() {
                     remainingText = "Link kadaluarsa";
                   } else {
                     const totalSeconds = Math.floor(left / 1000);
+                    const hours = Math.floor(totalSeconds / 3600);
+                    const mins = Math.floor((totalSeconds % 3600) / 60);
+                    const secs = totalSeconds % 60;
 
-                      const hours = Math.floor(totalSeconds / 3600);
-                      const mins = Math.floor((totalSeconds % 3600) / 60);
-                      const secs = totalSeconds % 60;
-
-                      remainingText = `Sisa waktu: ${hours}:${mins
-                        .toString()
-                        .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-                    }
+                    remainingText = `Sisa waktu: ${hours}:${mins
+                      .toString()
+                      .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+                  }
                 }
               }
 
               const downloadDisabled =
                 !isApproved || isDownloading || downloadExpired;
+              const canReorder = isRejected || downloadExpired;
 
               return (
                 <div key={pesanan.id} className="pesanan-card">
@@ -478,23 +527,48 @@ export default function PesananPage() {
                           {remainingText}
                         </div>
                       )}
+
+                      {isRejected && pesanan.notes && (
+                        <button
+                          className="btn-view-notes"
+                          onClick={() =>
+                            setRejectionModal({
+                              pesanan,
+                              notes: pesanan.notes || null,
+                            })
+                          }
+                        >
+                          Lihat Alasan
+                        </button>
+                      )}
                     </div>
 
-                    <button
-                      className={`btn-download ${downloadDisabled ? "disabled" : ""}`}
-                      disabled={downloadDisabled}
-                      onClick={() => handleDownload(pesanan)}
-                    >
-                      {isDownloading ? (
-                        <>
-                          <Loader2 size={16} className="spinner" /> Mengunduh...
-                        </>
-                      ) : (
-                        <>
-                          <Download size={16} /> Unduh Aset
-                        </>
+                    <div className="button-group">
+                      <button
+                        className={`btn-download ${downloadDisabled ? "disabled" : ""}`}
+                        disabled={downloadDisabled}
+                        onClick={() => handleDownload(pesanan)}
+                      >
+                        {isDownloading ? (
+                          <>
+                            <Loader2 size={16} className="spinner" /> Mengunduh...
+                          </>
+                        ) : (
+                          <>
+                            <Download size={16} /> Unduh Aset
+                          </>
+                        )}
+                      </button>
+
+                      {canReorder && (
+                        <button
+                          className="btn-reorder-action"
+                          onClick={() => handleReorder(pesanan)}
+                        >
+                          <RotateCcw size={16} /> Pesan Ulang
+                        </button>
                       )}
-                    </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -592,6 +666,26 @@ export default function PesananPage() {
         .modal-content strong {
           color: #ffd700;
         }
+
+        .rejection-notes {
+          background: rgba(255, 215, 0, 0.05);
+          border: 1px solid rgba(255, 215, 0, 0.2);
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 24px;
+          min-height: 80px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .rejection-notes p {
+          margin: 0;
+          color: #e2e8f0;
+          font-size: 0.95rem;
+          line-height: 1.6;
+          text-align: center;
+        }
+
         .modal-actions {
           display: flex;
           gap: 12px;
@@ -629,6 +723,26 @@ export default function PesananPage() {
           transform: translateY(-1px);
           box-shadow: 0 8px 22px rgba(255, 215, 0, 0.35);
         }
+
+        .btn-reorder {
+          background: linear-gradient(135deg, #10b981, #059669);
+          border: none;
+          color: white;
+          padding: 10px 20px;
+          border-radius: 30px;
+          font-weight: 700;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          transition: all 0.2s;
+          box-shadow: 0 6px 18px rgba(16, 185, 129, 0.25);
+        }
+        .btn-reorder:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 22px rgba(16, 185, 129, 0.35);
+        }
+
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
@@ -869,6 +983,32 @@ export default function PesananPage() {
           border-color: rgba(239, 68, 68, 0.4);
         }
 
+        .btn-view-notes {
+          background: rgba(96, 165, 250, 0.1);
+          border: 1px solid rgba(96, 165, 250, 0.3);
+          color: #60a5fa;
+          padding: 6px 12px;
+          border-radius: 20px;
+          font-size: 0.7rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+          white-space: nowrap;
+        }
+        .btn-view-notes:hover {
+          background: rgba(96, 165, 250, 0.2);
+          border-color: rgba(96, 165, 250, 0.5);
+          color: #93c5fd;
+        }
+
+        .button-group {
+          display: flex;
+          gap: 8px;
+          width: 100%;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
         .btn-download {
           display: inline-flex;
           align-items: center;
@@ -905,6 +1045,34 @@ export default function PesananPage() {
           opacity: 0.6;
         }
 
+        .btn-reorder-action {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          background: linear-gradient(135deg, #10b981, #059669);
+          color: white;
+          padding: 12px 28px;
+          border-radius: 30px;
+          font-weight: 700;
+          text-decoration: none;
+          border: none;
+          cursor: pointer;
+          font-size: 0.9rem;
+          letter-spacing: -0.2px;
+          transition: all 0.2s ease;
+          box-shadow: 0 6px 18px rgba(16, 185, 129, 0.25);
+          white-space: nowrap;
+          min-width: 140px;
+        }
+        .btn-reorder-action:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 24px rgba(16, 185, 129, 0.35);
+        }
+        .btn-reorder-action:active {
+          transform: translateY(0);
+        }
+
         .spinner {
           animation: spin 1s linear infinite;
         }
@@ -912,7 +1080,7 @@ export default function PesananPage() {
           to { transform: rotate(360deg); }
         }
 
-        /* Tablet/Medium (600px - 1026px) */
+        /* Tablet/Medium (600px - 2000px) */
         @media (max-width: 2000px) {
           .pesanan-card {
             flex-wrap: wrap;
@@ -932,10 +1100,12 @@ export default function PesananPage() {
             flex: 1;
             order: 1;
           }
-          .btn-download {
+          .button-group {
             order: 2;
             flex-shrink: 0;
-            min-width: 150px;
+            justify-content: flex-end;
+            width: auto;
+            gap: 8px;
           }
         }
 
@@ -1005,13 +1175,30 @@ export default function PesananPage() {
             text-align: center;
           }
 
-          .btn-download {
+          .btn-view-notes {
+            width: 100%;
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            text-align: center;
+          }
+
+          .button-group {
+            width: 100%;
+            flex-direction: column;
+            gap: 8px;
+            justify-content: stretch;
+          }
+
+          .btn-download,
+          .btn-reorder-action {
             width: 100%;
             padding: 12px 16px;
             font-size: 0.85rem;
             gap: 6px;
+            min-width: unset;
           }
-          .btn-download svg {
+          .btn-download svg,
+          .btn-reorder-action svg {
             width: 14px;
             height: 14px;
           }
@@ -1041,12 +1228,15 @@ export default function PesananPage() {
           }
           .modal-actions {
             gap: 10px;
+            flex-direction: column;
           }
           .btn-primary,
-          .btn-secondary {
+          .btn-secondary,
+          .btn-reorder {
             flex: 1;
             padding: 10px 16px;
             font-size: 0.85rem;
+            justify-content: center;
           }
         }
       `}</style>
