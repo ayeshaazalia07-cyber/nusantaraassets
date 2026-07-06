@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const orderUrl = `${siteUrl}/pesanan`;
 
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "NusantaraAssets <noreply@nusantaraassets.com>",
+      from: "NusantaraAssets <nusantaraassets5@gmail.com>",
       to: [customer.email],
       subject: `Pesanan #${shortId} Telah Disetujui`,
       html: `

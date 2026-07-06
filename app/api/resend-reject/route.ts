@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
 
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "NusantaraAssets <noreply@nusantaraassets.com>",
+      from: "NusantaraAssets <nusantaraassets5@gmail.com>",
       to: [customer.email],
       subject: `Pesanan #${shortId} Ditolak`,
       html: `
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
                 <tr>
                   <td style="padding:0 32px 28px;">
                     <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.6;text-align:center;">
-                      Silakan periksa kembali bukti transfer atau hubungi <a href="mailto:support@nusantaraassets.com" style="color:#ffd700;text-decoration:none;">support@nusantaraassets.com</a> untuk informasi lebih lanjut.
+                      Silakan periksa kembali bukti transfer atau hubungi <a href="mailto:nusantaraassets5@gmail.com" style="color:#ffd700;text-decoration:none;">nusantaraassets5@gmail.com</a> untuk informasi lebih lanjut.
                     </p>
                   </td>
                 </tr>
