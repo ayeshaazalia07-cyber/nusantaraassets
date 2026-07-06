@@ -71,7 +71,8 @@ export async function POST(request: NextRequest) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
 
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "NusantaraAssets <nusantaraassets5@gmail.com>",
+      from: "NusantaraAssets <noreply@nusantaraassets.com>",
+      replyTo: "nusantaraassets5@gmail.com",
       to: [customer.email],
       subject: `Pesanan #${shortId} Ditolak`,
       html: `
