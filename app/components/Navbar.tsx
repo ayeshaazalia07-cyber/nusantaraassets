@@ -69,7 +69,14 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     try {
-      localStorage.clear();
+      // ✅ FIX: Jangan gunakan localStorage.clear() agar keranjang tidak hilang!
+      // Hapus hanya data yang berkaitan dengan sesi login
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userEmail");
+      localStorage.removeItem("userName");
+      localStorage.removeItem("userPic");
+      localStorage.removeItem("isLoggedIn");
+
       await signOut(auth);
       setIsOpen(false);
       router.push("/");
