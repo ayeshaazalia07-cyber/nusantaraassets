@@ -151,26 +151,31 @@ function PaymentContent() {
   const [isAgreed, setIsAgreed] = useState(false);
 
   useEffect(() => {
-    // 1. Logika Hitung Harga (dipertahankan 100%)
+    // 1. Logika Hitung Harga
     const hargaParams = searchParams.get("harga") || "";
     if (hargaParams) {
+      // Pembayaran langsung 1 produk
       const angkaSaja = parseInt(hargaParams.replace(/[^0-9]/g, "")) || 0;
       const totalDirect = hargaParams.toLowerCase().includes("k")
         ? angkaSaja * 1000
         : angkaSaja;
       setTotalTagihan(totalDirect);
     } else {
-      const savedCart = JSON.parse(
-        localStorage.getItem("nusantaraCart") || "[]",
+      // ✅ FIX: Membaca dari selectedProducts (barang yg dicentang saja), bukan nusantaraCart
+      const selectedProducts = JSON.parse(
+        localStorage.getItem("selectedProducts") || "[]",
       );
-      const totalKeranjang = savedCart.reduce((acc: number, item: any) => {
-        const hargaStr = String(item.harga || "0");
-        const angkaSaja = parseInt(hargaStr.replace(/[^0-9]/g, "")) || 0;
-        const hargaFinal = hargaStr.toLowerCase().includes("k")
-          ? angkaSaja * 1000
-          : angkaSaja;
-        return acc + hargaFinal;
-      }, 0);
+      const totalKeranjang = selectedProducts.reduce(
+        (acc: number, item: any) => {
+          const hargaStr = String(item.harga || "0");
+          const angkaSaja = parseInt(hargaStr.replace(/[^0-9]/g, "")) || 0;
+          const hargaFinal = hargaStr.toLowerCase().includes("k")
+            ? angkaSaja * 1000
+            : angkaSaja;
+          return acc + hargaFinal;
+        },
+        0,
+      );
       setTotalTagihan(totalKeranjang);
     }
 
@@ -271,9 +276,12 @@ function PaymentContent() {
     }
 
     const productIdParam = searchParams.get("id");
-    const savedCart = JSON.parse(localStorage.getItem("nusantaraCart") || "[]");
+    // ✅ FIX: Gunakan selectedProducts untuk validasi dan insert database
+    const selectedProducts = JSON.parse(
+      localStorage.getItem("selectedProducts") || "[]",
+    );
 
-    if (!productIdParam && savedCart.length === 0) {
+    if (!productIdParam && selectedProducts.length === 0) {
       Swal.fire({
         title: "Produk Tidak Ditemukan!",
         text: "Keranjang kosong atau produk tidak valid. Kembali ke katalog dan coba lagi.",
@@ -344,9 +352,6 @@ function PaymentContent() {
       const customerId =
         localStorage.getItem("userId") || localStorage.getItem("userUid") || "";
 
-      // ==========================================
-      // KODE BARU: LOGIKA PISAH PRODUK KERANJANG
-      // ==========================================
       let ordersToInsert = [];
 
       if (productIdParam) {
@@ -359,8 +364,8 @@ function PaymentContent() {
           status: "pending",
         });
       } else {
-        // 2. Jika Checkout dari Keranjang (Banyak Produk)
-        ordersToInsert = savedCart.map((item: any) => ({
+        // 2. Jika Checkout dari Keranjang (Banyak Produk) - HANYA YANG DIPILIH
+        ordersToInsert = selectedProducts.map((item: any) => ({
           customer_id: customerId,
           product_id: parseInt(item.id || item.product_id), // Pastikan ID produk terekstrak
           metode_pembayaran: metode,
@@ -375,7 +380,6 @@ function PaymentContent() {
         .insert(ordersToInsert);
 
       if (dbError) throw dbError;
-      // ==========================================
 
       const emailParams = {
         from_name: localStorage.getItem("userName") || "Pembeli",
@@ -395,9 +399,20 @@ function PaymentContent() {
         process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY!,
       );
 
-      // 3. Hapus keranjang jika dari cart
+      // 3. ✅ FIX: Hapus HANYA barang yang di-checkout dari nusantaraCart
       if (!productIdParam) {
-        localStorage.removeItem("nusantaraCart");
+        const currentCart = JSON.parse(
+          localStorage.getItem("nusantaraCart") || "[]",
+        );
+        // Saring keranjang: simpan barang yang TIDAK ada di selectedProducts
+        const newCart = currentCart.filter(
+          (cartItem: any) =>
+            !selectedProducts.some((p: any) => p.nama === cartItem.nama),
+        );
+        localStorage.setItem("nusantaraCart", JSON.stringify(newCart));
+        localStorage.removeItem("selectedProducts");
+        localStorage.removeItem("checkoutTotal");
+        localStorage.removeItem("checkoutType");
         window.dispatchEvent(new Event("storage"));
       }
 
