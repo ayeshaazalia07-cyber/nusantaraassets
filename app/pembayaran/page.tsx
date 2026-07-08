@@ -147,6 +147,9 @@ function PaymentContent() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // ✅ State untuk checkbox persetujuan T&C
+  const [isAgreed, setIsAgreed] = useState(false);
+
   useEffect(() => {
     // 1. Logika Hitung Harga (dipertahankan 100%)
     const hargaParams = searchParams.get("harga") || "";
@@ -252,8 +255,21 @@ function PaymentContent() {
     }
   };
 
-  // ── Handle konfirmasi pembayaran (DIUBAH AGAR SUPPORT KERANJANG & REDIRECT KE /pesanan) ─────────
+  // ── Handle konfirmasi pembayaran ─────────
   const handleKonfirmasi = async () => {
+    // Validasi checkbox persetujuan
+    if (!isAgreed) {
+      Swal.fire({
+        title: "Persetujuan Diperlukan",
+        text: "Anda harus menyetujui Syarat & Ketentuan untuk melanjutkan.",
+        icon: "warning",
+        confirmButtonColor: "#ffd700",
+        background: "#1e293b",
+        color: "#fff",
+      });
+      return;
+    }
+
     const productIdParam = searchParams.get("id");
     const savedCart = JSON.parse(localStorage.getItem("nusantaraCart") || "[]");
 
@@ -328,9 +344,13 @@ function PaymentContent() {
       const customerId =
         localStorage.getItem("userId") || localStorage.getItem("userUid") || "";
 
+      // ==========================================
+      // KODE BARU: LOGIKA PISAH PRODUK KERANJANG
+      // ==========================================
       let ordersToInsert = [];
 
       if (productIdParam) {
+        // 1. Jika Beli Langsung (1 Produk)
         ordersToInsert.push({
           customer_id: customerId,
           product_id: parseInt(productIdParam),
@@ -339,20 +359,23 @@ function PaymentContent() {
           status: "pending",
         });
       } else {
+        // 2. Jika Checkout dari Keranjang (Banyak Produk)
         ordersToInsert = savedCart.map((item: any) => ({
           customer_id: customerId,
-          product_id: parseInt(item.id || item.product_id),
+          product_id: parseInt(item.id || item.product_id), // Pastikan ID produk terekstrak
           metode_pembayaran: metode,
           bukti_transfer_url: filePath,
           status: "pending",
         }));
       }
 
+      // Tembakkan semua produk sekaligus ke database
       const { error: dbError } = await supabase
         .from("orders")
         .insert(ordersToInsert);
 
       if (dbError) throw dbError;
+      // ==========================================
 
       const emailParams = {
         from_name: localStorage.getItem("userName") || "Pembeli",
@@ -372,22 +395,23 @@ function PaymentContent() {
         process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY!,
       );
 
-      // Hapus keranjang jika dari cart
+      // 3. Hapus keranjang jika dari cart
       if (!productIdParam) {
         localStorage.removeItem("nusantaraCart");
         window.dispatchEvent(new Event("storage"));
       }
 
-      // ✅ MODIFIKASI: Arahkan ke /pesanan setelah sukses
       Swal.fire({
         title: "Berhasil!",
-        text: "Silakan tunggu, tampilan akan berubah otomatis jika sudah dikonfirmasi admin.",
+        text: "Bukti pembayaran terkirim. Klik OK untuk memantau status pesananmu.",
         icon: "success",
         confirmButtonColor: "#ffd700",
         background: "#1e293b",
         color: "#fff",
-      }).then(() => {
-        window.location.href = "/pesanan";
+      }).then((result) => {
+        if (result.isConfirmed || result.isDismissed) {
+          window.location.href = "/pesanan";
+        }
       });
     } catch (error: any) {
       console.error(error);
@@ -604,11 +628,36 @@ function PaymentContent() {
             )}
           </div>
 
+          {/* ✅ Checkbox Syarat & Ketentuan */}
+          <div className="tnc-checkbox-container">
+            <label className="tnc-checkbox-label">
+              <input
+                type="checkbox"
+                checked={isAgreed}
+                onChange={(e) => setIsAgreed(e.target.checked)}
+                className="tnc-checkbox-input"
+              />
+              <span className="tnc-checkbox-text">
+                Saya setuju dengan{" "}
+                <a
+                  href="/Terms & Conditions NusantaraAssets.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="tnc-link"
+                  onClick={(e) => e.stopPropagation()} // Mencegah klik link mencentang checkbox secara tidak sengaja
+                >
+                  Syarat & Ketentuan
+                </a>{" "}
+                yang berlaku di NusantaraAssets.
+              </span>
+            </label>
+          </div>
+
           {/* ── Tombol Konfirmasi ── */}
           <button
             onClick={handleKonfirmasi}
-            className={`btn-confirm ${!buktiPembayaran || isUploading ? "disabled" : ""}`}
-            disabled={!buktiPembayaran || isUploading}
+            className={`btn-confirm ${!buktiPembayaran || !isAgreed || isUploading ? "disabled" : ""}`}
+            disabled={!buktiPembayaran || !isAgreed || isUploading}
           >
             {isUploading ? "MENGIRIM..." : "KONFIRMASI PEMBAYARAN"}
           </button>
@@ -845,6 +894,45 @@ function PayStyles() {
         margin-top: 15px;
         border-radius: 10px;
         border: 2px solid #ffd700;
+      }
+
+      /* ── Checkbox Syarat & Ketentuan ── */
+      .tnc-checkbox-container {
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .tnc-checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+      }
+      .tnc-checkbox-input {
+        width: 16px;
+        height: 16px;
+        accent-color: #ffd700;
+        cursor: pointer;
+      }
+      .tnc-checkbox-text {
+        font-size: 13px;
+        color: #94a3b8;
+        line-height: 1.4;
+        text-align: left;
+      }
+      .tnc-link {
+        color: #ffd700;
+        text-decoration: underline;
+        font-weight: 600;
+        transition: color 0.2s;
+      }
+      .tnc-link:hover {
+        color: #fbbf24;
       }
 
       /* ── Tombol Konfirmasi ── */
