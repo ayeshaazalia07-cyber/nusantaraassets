@@ -4,11 +4,13 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { auth } from "@/app/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { createSupabaseBrowser } from "@/app/lib/supabase/client"; // ✅ WAJIB IMPORT SUPABASE
 
 function DetailContent() {
   const searchParams = useSearchParams();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // State untuk loading tombol Unduh Gratis
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -19,7 +21,7 @@ function DetailContent() {
 
   const id = searchParams.get("id") || "";
   const nama = searchParams.get("nama") || "Aset Nusantara";
-  const harga = searchParams.get("harga") || "Rp 70k";
+  const rawHarga = searchParams.get("harga") || "Rp 70k";
   const desc =
     searchParams.get("desc") ||
     "Aset berkualitas tinggi dari kebudayaan Nusantara.";
@@ -27,6 +29,58 @@ function DetailContent() {
 
   const isTrial = searchParams.get("isTrial") === "true";
   const fileUrl = searchParams.get("fileUrl") || "";
+
+  // ✅ LOGIKA CEK GRATIS: Kalau string-nya "null", "gratis", atau "0"
+  const isFree =
+    rawHarga.toLowerCase() === "gratis" ||
+    rawHarga === "null" ||
+    rawHarga === "0";
+
+  // ✅ Format harga yang rapi (biar nggak muncul "null" atau angka doang tanpa Rp)
+  const displayHarga = isFree
+    ? "GRATIS"
+    : rawHarga.toLowerCase().includes("rp") ||
+        rawHarga.toLowerCase().includes("k")
+      ? rawHarga
+      : `Rp ${parseInt(rawHarga).toLocaleString("id-ID")}`;
+
+  // ✅ FUNGSI UNDUH GRATIS (Langsung masuk database dengan status approved)
+  const handleUnduhGratis = async () => {
+    if (!isLoggedIn) {
+      alert("Ups! Kamu harus login dulu untuk mengklaim aset gratis ini.");
+      window.location.href = "/login";
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const supabase = createSupabaseBrowser();
+      const customerId = localStorage.getItem("userId");
+
+      // Insert ke tabel orders dengan metode 'gratis' dan langsung 'approved'
+      const { error } = await supabase.from("orders").insert([
+        {
+          customer_id: customerId,
+          product_id: parseInt(id),
+          metode_pembayaran: "gratis",
+          status: "approved",
+          is_approved: true,
+        },
+      ]);
+
+      if (error) throw error;
+
+      alert(
+        "Hore! Aset gratis berhasil ditambahkan. Kamu akan diarahkan ke Pesanan Saya untuk mengunduh file-nya.",
+      );
+      window.location.href = "/pesanan";
+    } catch (error) {
+      console.error("Gagal klaim aset gratis:", error);
+      alert("Terjadi kesalahan. Silakan coba lagi nanti.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   return (
     <main
@@ -116,7 +170,7 @@ function DetailContent() {
             aspectRatio: "16/9",
             background: "#1e293b",
             borderRadius: "25px",
-            border: "2px solid #ffd700",
+            border: isFree ? "2px solid #4ade80" : "2px solid #ffd700", // Border Hijau kalau gratis
             margin: "0 auto 30px",
             display: "flex",
             alignItems: "center",
@@ -137,19 +191,28 @@ function DetailContent() {
         </div>
 
         <h1
-          style={{ fontSize: "2.5rem", color: "#ffd700", marginBottom: "10px" }}
+          style={{
+            fontSize: "2.5rem",
+            color: "#fff",
+            marginBottom: "10px",
+          }}
         >
           {nama}
         </h1>
+
+        {/* ✅ HARGA TAMPIL DISINI */}
         <p
           style={{
-            fontSize: "1.5rem",
-            fontWeight: "bold",
+            fontSize: "1.8rem",
+            fontWeight: "900",
             marginBottom: "20px",
+            color: isFree ? "#4ade80" : "#ffd700", // Hijau terang kalau gratis
+            letterSpacing: "1px",
           }}
         >
-          {harga}
+          {displayHarga}
         </p>
+
         <p
           style={{
             color: "#94a3b8",
@@ -204,63 +267,91 @@ function DetailContent() {
             </button>
           )}
 
-          <button
-            className="btn-cart"
-            style={{
-              padding: "15px 40px",
-              background: "transparent",
-              border: "2px solid #ffd700",
-              color: "#ffd700",
-              borderRadius: "15px",
-              fontWeight: "bold",
-              cursor: "pointer",
-              transition: "all 0.3s ease",
-            }}
-            onClick={() => {
-              const keranjang = JSON.parse(
-                localStorage.getItem("nusantaraCart") || "[]",
-              );
+          {/* ✅ JIKA GRATIS, TAMPILKAN TOMBOL UNDUH GRATIS SAJA */}
+          {isFree ? (
+            <button
+              className="btn-free"
+              disabled={isProcessing}
+              style={{
+                padding: "15px 40px",
+                background: "#4ade80",
+                color: "#0f172a",
+                borderRadius: "15px",
+                fontWeight: "900",
+                border: "none",
+                cursor: isProcessing ? "not-allowed" : "pointer",
+                transition: "all 0.3s ease",
+                boxShadow: "0 4px 15px rgba(74, 222, 128, 0.3)",
+                opacity: isProcessing ? 0.7 : 1,
+              }}
+              onClick={handleUnduhGratis}
+            >
+              {isProcessing ? "Memproses..." : "⬇ Unduh Gratis"}
+            </button>
+          ) : (
+            // ✅ JIKA BERBAYAR, TAMPILKAN KERANJANG DAN BELI SEKARANG
+            <>
+              <button
+                className="btn-cart"
+                style={{
+                  padding: "15px 40px",
+                  background: "transparent",
+                  border: "2px solid #ffd700",
+                  color: "#ffd700",
+                  borderRadius: "15px",
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  transition: "all 0.3s ease",
+                }}
+                onClick={() => {
+                  const keranjang = JSON.parse(
+                    localStorage.getItem("nusantaraCart") || "[]",
+                  );
 
-              // ✅ PERBAIKAN: Masukkan image_preview ke dalam objek keranjang
-              keranjang.push({
-                id,
-                nama,
-                harga,
-                image_preview: previewImg, // INI KUNCINYA AGAR GAMBAR MUNCUL DI KERANJANG
-              });
+                  keranjang.push({
+                    id,
+                    nama,
+                    harga: rawHarga,
+                    image_preview: previewImg,
+                  });
 
-              localStorage.setItem("nusantaraCart", JSON.stringify(keranjang));
-              window.dispatchEvent(new Event("storage")); // Biar navbar update otomatis
-              alert("Berhasil masuk keranjang! 🛒");
-              window.location.href = "/keranjang";
-            }}
-          >
-            🛒 + Keranjang
-          </button>
+                  localStorage.setItem(
+                    "nusantaraCart",
+                    JSON.stringify(keranjang),
+                  );
+                  window.dispatchEvent(new Event("storage"));
+                  alert("Berhasil masuk keranjang! 🛒");
+                  window.location.href = "/keranjang";
+                }}
+              >
+                🛒 + Keranjang
+              </button>
 
-          <button
-            className="btn-buy"
-            style={{
-              padding: "15px 40px",
-              background: "#ffd700",
-              color: "#0f172a",
-              borderRadius: "15px",
-              fontWeight: "bold",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.3s ease",
-            }}
-            onClick={() => {
-              if (!isLoggedIn) {
-                alert("Ups! Kamu harus login dulu sebelum membeli.");
-                window.location.href = "/login";
-                return;
-              }
-              window.location.href = `/pembayaran?id=${encodeURIComponent(id)}&nama=${encodeURIComponent(nama)}&harga=${encodeURIComponent(harga)}`;
-            }}
-          >
-            Beli Sekarang
-          </button>
+              <button
+                className="btn-buy"
+                style={{
+                  padding: "15px 40px",
+                  background: "#ffd700",
+                  color: "#0f172a",
+                  borderRadius: "15px",
+                  fontWeight: "bold",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.3s ease",
+                }}
+                onClick={() => {
+                  if (!isLoggedIn) {
+                    alert("Ups! Kamu harus login dulu sebelum membeli.");
+                    window.location.href = "/login";
+                    return;
+                  }
+                  window.location.href = `/pembayaran?id=${encodeURIComponent(id)}&nama=${encodeURIComponent(nama)}&harga=${encodeURIComponent(rawHarga)}`;
+                }}
+              >
+                Beli Sekarang
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -318,6 +409,13 @@ function DetailContent() {
           box-shadow:
             0 0 15px #10b981,
             0 0 30px #10b981 !important;
+          transform: translateY(-3px);
+        }
+        .btn-free:hover {
+          background: #22c55e !important;
+          box-shadow:
+            0 0 15px #4ade80,
+            0 0 30px #4ade80 !important;
           transform: translateY(-3px);
         }
         .btn-cart:hover {

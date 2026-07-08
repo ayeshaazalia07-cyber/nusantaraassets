@@ -153,44 +153,73 @@ export default function Home() {
               ⏳ Menganalisis tren pasar Nusantara...
             </p>
           ) : topProducts.length > 0 ? (
-            topProducts.map((produk) => (
-              <div className="card-aset" key={produk.id}>
-                <div className="preview-container">
-                  <span className="badge">{produk.kategori || "ASET 2D"}</span>
-                  {/* ✅ Perbaikan: Menggunakan gambar_url sesuai database */}
-                  <img
-                    src={
-                      produk.gambar_url ||
-                      produk.image_preview ||
-                      "/img/logo-preview.jpg"
-                    }
-                    className="img-produk"
-                    alt={produk.nama}
-                  />
-                </div>
-                <div className="card-content">
-                  <h3>{produk.nama}</h3>
-                  <p>{produk.deskripsi}</p>
-                </div>
-                <div className="harga-kontainer">
-                  <div className="harga">{produk.harga}</div>
-                  <button
-                    className="btn-detail"
-                    onClick={() => {
-                      // ✅ Perbaikan: Mengirim link gambar_url ke halaman detail
-                      const finalImg =
+            topProducts.map((produk) => {
+              // ✅ LOGIKA CEK GRATIS: Jika is_free_trial true ATAU harga null/0
+              const isFree = produk.is_free_trial || !produk.harga;
+
+              return (
+                <div className="card-aset" key={produk.id}>
+                  <div className="preview-container">
+                    <span className="badge">
+                      {produk.kategori || "ASET 2D"}
+                    </span>
+                    <img
+                      src={
                         produk.gambar_url ||
                         produk.image_preview ||
-                        "/img/logo-preview.jpg";
-                      const url = `/detail-produk?id=${produk.id}&nama=${encodeURIComponent(produk.nama)}&harga=${encodeURIComponent(produk.harga)}&desc=${encodeURIComponent(produk.deskripsi)}&img=${encodeURIComponent(finalImg)}`;
-                      window.location.href = url;
-                    }}
-                  >
-                    Detail
-                  </button>
+                        "/img/logo-preview.jpg"
+                      }
+                      className="img-produk"
+                      alt={produk.nama}
+                    />
+                  </div>
+                  <div className="card-content">
+                    <h3>{produk.nama}</h3>
+                    <p>{produk.deskripsi}</p>
+                  </div>
+                  <div className="harga-kontainer">
+                    {/* ✅ MENAMPILKAN HARGA YANG BENAR */}
+                    <div
+                      className="harga"
+                      style={{
+                        color: isFree ? "#4ade80" : "#ffd700",
+                        fontWeight: "800",
+                      }}
+                    >
+                      {isFree
+                        ? "GRATIS"
+                        : `Rp ${typeof produk.harga === "number" ? produk.harga.toLocaleString("id-ID") : produk.harga || "70.000"}`}
+                    </div>
+                    <button
+                      className="btn-detail"
+                      onClick={() => {
+                        const finalImg =
+                          produk.gambar_url ||
+                          produk.image_preview ||
+                          "/img/logo-preview.jpg";
+
+                        // ✅ KIRIM HARGA YANG BENAR KE HALAMAN DETAIL (Bukan 'null' lagi)
+                        const hargaFinal = isFree
+                          ? "Gratis"
+                          : produk.harga || "70k";
+
+                        const url = `/detail-produk?id=${produk.id}&nama=${encodeURIComponent(
+                          produk.nama,
+                        )}&harga=${encodeURIComponent(
+                          hargaFinal,
+                        )}&desc=${encodeURIComponent(
+                          produk.deskripsi || "",
+                        )}&img=${encodeURIComponent(finalImg)}`;
+
+                        window.location.href = url;
+                      }}
+                    >
+                      Detail
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <p
               style={{
@@ -258,7 +287,7 @@ export default function Home() {
           </a>
         </div>
         <p>&copy; NusantaraAssets - Oleh FantasticFive</p>
-        <p style={{ fontSize: "12px", marginTop: "10px" }}>
+        <p style={{ fontSize: "12px", margin: "10px 0" }}>
           Cultural Heritage in Every Pixel — © 2026. All Rights Reserved.
         </p>
       </footer>

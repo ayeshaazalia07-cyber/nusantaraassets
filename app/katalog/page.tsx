@@ -157,144 +157,166 @@ export default function Katalog() {
             gap: "30px",
           }}
         >
-          {asetFiltered.map((item) => (
-            <div
-              key={item.id}
-              className="card-aset"
-              style={{
-                background: "#1e293b",
-                borderRadius: "20px",
-                overflow: "hidden",
-                border: "1px solid rgba(255,255,255,0.05)",
-                display: "flex",
-                flexDirection: "column",
-                height: "100%",
-                position: "relative",
-              }}
-            >
-              <div
-                className="preview-container"
-                style={{ position: "relative", width: "100%" }}
-              >
-                <span
-                  className="badge"
-                  style={{
-                    position: "absolute",
-                    top: "12px",
-                    left: "12px",
-                    background: "#ffd700",
-                    color: "#0f172a",
-                    padding: "4px 12px",
-                    borderRadius: "8px",
-                    fontSize: "10px",
-                    fontWeight: "900",
-                    zIndex: "10",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
-                    width: "fit-content",
-                    display: "inline-block",
-                  }}
-                >
-                  {item.provinsi || item.prov}
-                </span>
-                <img
-                  src={
-                    item.gambar_url ||
-                    item.image_preview ||
-                    "/img/logo-preview.jpg"
-                  }
-                  className="img-produk"
-                  alt={item.nama}
-                  style={{
-                    width: "100%",
-                    aspectRatio: "16/9",
-                    objectFit: "cover",
-                    display: "block",
-                  }}
-                />
-              </div>
+          {asetFiltered.map((item) => {
+            // ✅ LOGIKA CEK GRATIS: Jika is_free_trial true ATAU harga null/0
+            const isFree = item.is_free_trial || !item.harga;
 
+            return (
               <div
-                className="card-content"
+                key={item.id}
+                className="card-aset"
                 style={{
-                  padding: "20px 20px 0",
-                  flex: "1 0 auto",
+                  background: "#1e293b",
+                  borderRadius: "20px",
+                  overflow: "hidden",
+                  border: "1px solid rgba(255,255,255,0.05)",
                   display: "flex",
                   flexDirection: "column",
-                }}
-              >
-                <h3
-                  style={{
-                    fontSize: "1.2rem",
-                    marginBottom: "10px",
-                    color: "#fff",
-                    fontWeight: "700",
-                  }}
-                >
-                  {item.nama}
-                </h3>
-                <p
-                  style={{
-                    fontSize: "0.9rem",
-                    color: "#94a3b8",
-                    lineHeight: "1.5",
-                    marginBottom: "20px",
-                  }}
-                >
-                  {item.deskripsi || item.desc}
-                </p>
-              </div>
-
-              <div
-                className="harga-kontainer"
-                style={{
-                  padding: "0 20px 40px",
-                  marginTop: "auto",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
+                  height: "100%",
+                  position: "relative",
                 }}
               >
                 <div
-                  className="harga"
-                  style={{
-                    fontWeight: "800",
-                    fontSize: "1.3rem",
-                    color: "#ffd700",
-                  }}
+                  className="preview-container"
+                  style={{ position: "relative", width: "100%" }}
                 >
-                  Rp{" "}
-                  {item.harga
-                    ? typeof item.harga === "number"
-                      ? item.harga.toLocaleString("id-ID")
-                      : item.harga
-                    : "70k"}
-                </div>
-                <button
-                  className="btn-detail"
-                  style={{
-                    padding: "10px 22px",
-                    fontSize: "0.85rem",
-                    background: "transparent",
-                    border: "1.5px solid #ffd700",
-                    color: "#ffd700",
-                    borderRadius: "12px",
-                    cursor: "pointer",
-                    fontWeight: "600",
-                  }}
-                  onClick={() => {
-                    const imgUrl =
+                  <span
+                    className="badge"
+                    style={{
+                      position: "absolute",
+                      top: "12px",
+                      left: "12px",
+                      background: "#ffd700",
+                      color: "#0f172a",
+                      padding: "4px 12px",
+                      borderRadius: "8px",
+                      fontSize: "10px",
+                      fontWeight: "900",
+                      zIndex: "10",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+                      width: "fit-content",
+                      display: "inline-block",
+                    }}
+                  >
+                    {item.provinsi || item.prov}
+                  </span>
+                  <img
+                    src={
                       item.gambar_url ||
                       item.image_preview ||
-                      "/img/logo-preview.jpg";
-                    const url = `/detail-produk?id=${encodeURIComponent(item.id)}&nama=${encodeURIComponent(item.nama)}&harga=${encodeURIComponent(item.harga || "70k")}&desc=${encodeURIComponent(item.deskripsi || item.desc || "")}&img=${encodeURIComponent(imgUrl)}`;
-                    window.location.href = url;
+                      "/img/logo-preview.jpg"
+                    }
+                    className="img-produk"
+                    alt={item.nama}
+                    style={{
+                      width: "100%",
+                      aspectRatio: "16/9",
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                </div>
+
+                <div
+                  className="card-content"
+                  style={{
+                    padding: "20px 20px 0",
+                    flex: "1 0 auto",
+                    display: "flex",
+                    flexDirection: "column",
                   }}
                 >
-                  Detail
-                </button>
+                  <h3
+                    style={{
+                      fontSize: "1.2rem",
+                      marginBottom: "10px",
+                      color: "#fff",
+                      fontWeight: "700",
+                    }}
+                  >
+                    {item.nama}
+                  </h3>
+                  <p
+                    style={{
+                      fontSize: "0.9rem",
+                      color: "#94a3b8",
+                      lineHeight: "1.5",
+                      marginBottom: "20px",
+                    }}
+                  >
+                    {item.deskripsi || item.desc}
+                  </p>
+                </div>
+
+                <div
+                  className="harga-kontainer"
+                  style={{
+                    padding: "0 20px 40px",
+                    marginTop: "auto",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  {/* ✅ MENAMPILKAN HARGA YANG BENAR */}
+                  <div
+                    className="harga"
+                    style={{
+                      fontWeight: "800",
+                      fontSize: "1.3rem",
+                      color: isFree ? "#4ade80" : "#ffd700", // Hijau jika gratis, Emas jika berbayar
+                    }}
+                  >
+                    {isFree
+                      ? "GRATIS"
+                      : `Rp ${
+                          typeof item.harga === "number"
+                            ? item.harga.toLocaleString("id-ID")
+                            : item.harga || "70.000"
+                        }`}
+                  </div>
+
+                  <button
+                    className="btn-detail"
+                    style={{
+                      padding: "10px 22px",
+                      fontSize: "0.85rem",
+                      background: "transparent",
+                      border: "1.5px solid #ffd700",
+                      color: "#ffd700",
+                      borderRadius: "12px",
+                      cursor: "pointer",
+                      fontWeight: "600",
+                    }}
+                    onClick={() => {
+                      const imgUrl =
+                        item.gambar_url ||
+                        item.image_preview ||
+                        "/img/logo-preview.jpg";
+
+                      // ✅ KIRIM HARGA YANG BENAR KE HALAMAN DETAIL
+                      const hargaFinal = isFree
+                        ? "Gratis"
+                        : item.harga || "70k";
+
+                      const url = `/detail-produk?id=${encodeURIComponent(
+                        item.id,
+                      )}&nama=${encodeURIComponent(
+                        item.nama,
+                      )}&harga=${encodeURIComponent(
+                        hargaFinal,
+                      )}&desc=${encodeURIComponent(
+                        item.deskripsi || item.desc || "",
+                      )}&img=${encodeURIComponent(imgUrl)}`;
+                      window.location.href = url;
+                    }}
+                  >
+                    Detail
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
