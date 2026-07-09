@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Navbar from "@/app/components/Navbar";
-import { auth, db } from "@/app/lib/firebase";
+import { auth } from "@/app/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import Swal from "sweetalert2";
 import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 
@@ -95,15 +94,22 @@ export default function Home() {
     fetchPopularAssets();
   }, []);
 
+  // ✅ LOGIKA BARU: Kirim Saran Pakai Supabase
   const kirimSaran = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, "saran"), {
-        nama: formData.nama,
-        email: formData.email,
-        pesan: formData.pesan,
-        createdAt: serverTimestamp(),
-      });
+      const supabase = createSupabaseBrowser();
+
+      // Insert data ke tabel 'saran' di Supabase
+      const { error } = await supabase.from("saran").insert([
+        {
+          nama: formData.nama,
+          email: formData.email,
+          pesan: formData.pesan,
+        },
+      ]);
+
+      if (error) throw error; // Lempar error kalau gagal
 
       Swal.fire({
         title: "Terkirim!",
@@ -114,9 +120,10 @@ export default function Home() {
         color: "#fff",
       });
 
+      // Kosongkan form setelah sukses
       setFormData({ nama: "", email: "", pesan: "" });
     } catch (error) {
-      console.error("Error: ", error);
+      console.error("Error kirim saran: ", error);
       Swal.fire("Gagal!", "Ada masalah pas kirim data, coba lagi ya.", "error");
     }
   };
