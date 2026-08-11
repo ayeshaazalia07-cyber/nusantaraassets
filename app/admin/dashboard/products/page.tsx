@@ -50,21 +50,25 @@ const card: React.CSSProperties = {
   borderRadius: "24px",
 };
 
+// ✅ FIX: Tambahkan warna khusus untuk Special Pack di Admin
 const KATEGORI_CONFIG: Record<string, { color: string; bg: string }> = {
   "Jawa Tengah": { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" },
   "Jawa Barat": { color: "#a78bfa", bg: "rgba(167,139,250,0.1)" },
   "Jawa Timur": { color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
   Banten: { color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
   Bali: { color: "#f87171", bg: "rgba(248,113,113,0.1)" },
+  "Special Pack": { color: "#fbbf24", bg: "rgba(251,191,36,0.15)" }, // Emas menyala
   Lainnya: { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
 };
 
+// ✅ FIX: Tambahkan Special Pack ke daftar Dropdown
 const KATEGORI_LIST = [
   "Jawa Tengah",
   "Jawa Barat",
   "Jawa Timur",
   "Banten",
   "Bali",
+  "Special Pack",
   "Lainnya",
 ];
 
@@ -837,11 +841,12 @@ export default function ProductPage() {
                     gap: "12px",
                   }}
                 >
+                  {/* ✅ FIX: Pesan placeholder diperjelas */}
                   <div>
                     <label className="modal-label">Provinsi</label>
                     <input
                       className="modal-input"
-                      placeholder="Contoh: Banten"
+                      placeholder="Contoh: Banten / Special Pack"
                       value={form.provinsi}
                       onChange={(e) =>
                         setForm((f) => ({ ...f, provinsi: e.target.value }))
