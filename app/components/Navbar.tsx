@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { auth, db } from "@/app/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+// import { doc, setDoc, serverTimestamp } from "firebase/firestore"; // Dimatikan sementara agar tidak error di terminal
 import Link from "next/link";
 import {
   ShoppingCart,
@@ -24,11 +24,26 @@ export default function Navbar() {
   const pathname = usePathname();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // ✅ PERBAIKAN 1: Update hash setiap kali pindah halaman
   useEffect(() => {
     const handleHashChange = () => setActiveHash(window.location.hash);
+    handleHashChange(); // Panggil saat render agar langsung update
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
+  }, [pathname]);
+
+  // ✅ PERBAIKAN 2: Auto-scroll dari halaman lain ke Beranda (#kotak-saran)
+  useEffect(() => {
+    if (pathname === "/" && window.location.hash === "#kotak-saran") {
+      // Kasih jeda 200ms supaya DOM Halaman Beranda selesai di-render sebelum scroll
+      setTimeout(() => {
+        const element = document.getElementById("kotak-saran");
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 200);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -47,30 +62,12 @@ export default function Navbar() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setLoading(false);
-      if (currentUser) {
-        try {
-          await setDoc(
-            doc(db, "user_logs", currentUser.uid),
-            {
-              email: currentUser.email,
-              nama: currentUser.displayName || "User Nusantara",
-              last_login: serverTimestamp(),
-              status: "Online",
-            },
-            { merge: true },
-          );
-        } catch (err) {
-          console.error("Log error:", err);
-        }
-      }
     });
     return () => unsubscribe();
   }, []);
 
   const handleLogout = async () => {
     try {
-      // ✅ FIX: Jangan gunakan localStorage.clear() agar keranjang tidak hilang!
-      // Hapus hanya data yang berkaitan dengan sesi login
       localStorage.removeItem("userId");
       localStorage.removeItem("userEmail");
       localStorage.removeItem("userName");
@@ -153,10 +150,23 @@ export default function Navbar() {
         </Link>
 
         <Link
+          href="/mitra"
+          onClick={() => {
+            setIsOpen(false);
+            setActiveHash("");
+          }}
+          className={`nav-item ${isLinkActive("/mitra") ? "active" : ""}`}
+        >
+          Mitra
+        </Link>
+
+        {/* ✅ PERBAIKAN 3: Tombol Saran sekarang lebih pintar */}
+        <Link
           href="/#kotak-saran"
           onClick={(e) => {
             setIsOpen(false);
             setActiveHash("#kotak-saran");
+            // Kalau sudah di Beranda, langsung scroll aja (nggak butuh reload)
             if (pathname === "/") {
               e.preventDefault();
               const element = document.getElementById("kotak-saran");
@@ -164,6 +174,8 @@ export default function Navbar() {
                 element.scrollIntoView({ behavior: "smooth" });
               }
             }
+            // Kalau dari halaman lain, biarkan Next.js pindah ke "/"
+            // Nanti akan ditangkap oleh useEffect di atas dan di-scroll otomatis!
           }}
           className={`nav-item ${isLinkActive("/#kotak-saran") ? "active" : ""}`}
         >
@@ -484,14 +496,13 @@ export default function Navbar() {
             transition: 0.3s ease;
           }
 
-          /* FIX: Tombol Masuk Mobile Melebar (Menyesuaikan Desktop) */
           .mob-login-btn {
             background: transparent !important;
             color: #ffd700 !important;
             border: 1.5px solid #ffd700 !important;
-            padding: 10px 40px !important; /* Padding horizontal ditambah biar lebar */
+            padding: 10px 40px !important;
             border-radius: 10px !important;
-            display: inline-block !important; /* Biar ukurannya pas dengan padding */
+            display: inline-block !important;
             text-align: center !important;
             font-weight: 800 !important;
             text-decoration: none !important;

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createSupabaseBrowser } from "@/app/lib/supabase/client"; // Update import ini
+import { createSupabaseBrowser } from "@/app/lib/supabase/client";
 import "./global.css";
 
 export default function LoginPage() {
@@ -36,6 +36,8 @@ export default function LoginPage() {
       setError("Kredensial salah atau user tidak terdaftar.");
       setLoading(false);
     } else {
+      // ✅ FIX: Matikan loading sebelum pindah halaman biar nggak muter-muter
+      setLoading(false);
       // Refresh perlu dilakukan agar server-side session ter-update
       router.push("/admin/dashboard");
       router.refresh();
