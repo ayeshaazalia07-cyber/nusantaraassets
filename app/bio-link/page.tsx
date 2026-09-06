@@ -9,6 +9,11 @@ export default function BioLink() {
       icon: "/img/logo.png",
     },
     {
+      name: "Digital Brosur",
+      url: "https://simplebooklet.com/brochurenusantaraassets",
+      icon: "/img/logo.png",
+    },
+    {
       name: "Discord Community",
       url: "https://discord.gg/232aWYaGRc",
       icon: "/img/discord.png",
